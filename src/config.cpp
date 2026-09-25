@@ -12,8 +12,7 @@
 namespace sc {
 
 // variant 靠类型区分字段指针；若 mpfr_prec_t 与 long long 同型，下面两个重载会重复。
-static_assert(!std::is_same_v<mpfr_prec_t, long long>,
-              "ConfigFieldPtr 需要互不相同的成员指针类型");
+static_assert(!std::is_same_v<mpfr_prec_t, long long>, "ConfigFieldPtr 需要互不相同的成员指针类型");
 
 namespace {
 
@@ -31,8 +30,7 @@ bool parseBool(std::string_view text, bool& out) {
 }
 
 /// 整串必须是合法整数，不允许尾随垃圾。
-template <class T>
-bool parseIntegral(std::string_view text, T& out) {
+template <class T> bool parseIntegral(std::string_view text, T& out) {
     const char* first = text.data();
     const char* last = text.data() + text.size();
     const auto result = std::from_chars(first, last, out);

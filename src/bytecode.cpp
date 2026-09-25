@@ -16,8 +16,9 @@ void dumpBytecode(std::ostream& os, const CompilationUnit& unit, int digits) {
         switch (ins.op) {
             case OpCode::PushConst:
                 if (validConst(ins.operand))
-                    std::println(os, "{:>3}: {:5} [{}] {}", i, opName(ins.op), ins.operand,
-                                 unit.constants[static_cast<std::size_t>(ins.operand)].to_literal(digits));
+                    std::println(
+                        os, "{:>3}: {:5} [{}] {}", i, opName(ins.op), ins.operand,
+                        unit.constants[static_cast<std::size_t>(ins.operand)].to_literal(digits));
                 else
                     std::println(os, "{:>3}: {:5} [{}] <非法常量索引>", i, opName(ins.op),
                                  ins.operand);
@@ -26,9 +27,7 @@ void dumpBytecode(std::ostream& os, const CompilationUnit& unit, int digits) {
             case OpCode::Store:
                 std::println(os, "{:>3}: {:5} {}", i, opName(ins.op), ins.operand);
                 break;
-            default:
-                std::println(os, "{:>3}: {}", i, opName(ins.op));
-                break;
+            default: std::println(os, "{:>3}: {}", i, opName(ins.op)); break;
         }
     }
 }

@@ -1,0 +1,19 @@
+# 本项目的代码风格。由现有代码反推而来（不是拿 LLVM 默认去套）：
+# 4 空格缩进、100 列、指针/引用靠左、case 标签缩进 4、单行 if、
+# 手写换行的注释不重排、include 分组保持手工顺序。
+#
+# 用法：make format 应用；make format-check 检查（提交前）。
+# 少数手写对齐的表格（opcode/token 的 case 名表、lexer 的紧凑单行分支）
+# 用 // clang-format off / on 包住，见那几个文件。
+---
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 100
+PointerAlignment: Left
+AccessModifierOffset: -4
+ReflowComments: false
+SortIncludes: Never
+IndentCaseLabels: true
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty

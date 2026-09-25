@@ -74,11 +74,9 @@ Status VM::run(const CompilationUnit& unit, const Config& config, std::ostream& 
                 stack_.pop_back();
                 break;
 
-            case OpCode::Halt:
-                return {};
+            case OpCode::Halt: return {};
 
-            case OpCode::Count:
-                return at("非法指令", ip, inst.pos);
+            case OpCode::Count: return at("非法指令", ip, inst.pos);
 
             default: {
                 // 运算符表驱动：这里不需要知道具体是哪个运算符。

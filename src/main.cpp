@@ -4,6 +4,8 @@
 #include "engine.hpp"
 #include "repl.hpp"
 
+#include <cstdio>
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <print>
@@ -39,7 +41,9 @@ int runFile(sc::Engine& engine, const std::string& path) {
 
 } // namespace
 
-int main(int argc, char** argv) {
+// 函数级 try：本项目不用异常，但标准库（内存不足、格式化失败）与 GMP 的一些路径会抛。
+// 顶层兜住，保证进程以明确退出码结束，而不是 std::terminate。
+int main(int argc, char** argv) try {
     const std::string program = (argc > 0 && argv[0] != nullptr) ? argv[0] : "sc";
 
     auto options = sc::parseArgs(argc, argv);
@@ -79,4 +83,13 @@ int main(int argc, char** argv) {
 
     sc::runRepl(engine, std::cin, std::cout, std::cerr);
     return code(ExitCode::Ok);
+} catch (const std::exception& error) {
+    // 处理器里刻意用 C stdio：这时再分配内存可能再次失败。
+    std::fputs("内部错误: ", stderr);
+    std::fputs(error.what(), stderr);
+    std::fputc('\n', stderr);
+    return code(ExitCode::Failure);
+} catch (...) {
+    std::fputs("内部错误: 未知异常\n", stderr);
+    return code(ExitCode::Failure);
 }

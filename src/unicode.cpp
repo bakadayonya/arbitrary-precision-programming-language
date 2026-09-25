@@ -51,8 +51,7 @@ bool isOtherIdStart(char32_t codepoint) {
         case 0x309B: // KATAKANA-HIRAGANA VOICED SOUND MARK
         case 0x309C: // KATAKANA-HIRAGANA SEMI-VOICED SOUND MARK
             return true;
-        default:
-            return false;
+        default: return false;
     }
 }
 
@@ -67,8 +66,7 @@ bool isOtherIdContinue(char32_t codepoint) {
         case 0x200D: // ZERO WIDTH JOINER
         case 0x30FB: // KATAKANA MIDDLE DOT
             return true;
-        default:
-            return false;
+        default: return false;
     }
 }
 
@@ -79,10 +77,8 @@ bool isLetterCategory(utf8proc_category_t category) {
         case UTF8PROC_CATEGORY_LT:
         case UTF8PROC_CATEGORY_LM:
         case UTF8PROC_CATEGORY_LO:
-        case UTF8PROC_CATEGORY_NL:
-            return true;
-        default:
-            return false;
+        case UTF8PROC_CATEGORY_NL: return true;
+        default: return false;
     }
 }
 
@@ -116,10 +112,8 @@ bool isSpace(char32_t codepoint) {
     switch (utf8proc_category(static_cast<CodePoint>(codepoint))) {
         case UTF8PROC_CATEGORY_ZS:
         case UTF8PROC_CATEGORY_ZL:
-        case UTF8PROC_CATEGORY_ZP:
-            return true;
-        default:
-            return false;
+        case UTF8PROC_CATEGORY_ZP: return true;
+        default: return false;
     }
 }
 
@@ -145,10 +139,8 @@ bool isIdentContinue(char32_t codepoint) {
         case UTF8PROC_CATEGORY_MN:
         case UTF8PROC_CATEGORY_MC:
         case UTF8PROC_CATEGORY_ND:
-        case UTF8PROC_CATEGORY_PC:
-            return true;
-        default:
-            break;
+        case UTF8PROC_CATEGORY_PC: return true;
+        default: break;
     }
     if (isLetterCategory(utf8proc_category(static_cast<CodePoint>(codepoint)))) return true;
     return isOtherIdStart(codepoint) || isOtherIdContinue(codepoint);

@@ -134,8 +134,8 @@ constexpr bool hasUnaryOpcode(OpCode op) {
 constexpr bool opcodeCoverageOk() {
     for (int i = 0; i < OPCODE_COUNT; ++i) {
         const OpCode op = static_cast<OpCode>(i);
-        const int owners = (isVmCore(op) ? 1 : 0) + (hasBinaryOpcode(op) ? 1 : 0) +
-                           (hasUnaryOpcode(op) ? 1 : 0);
+        const int owners =
+            (isVmCore(op) ? 1 : 0) + (hasBinaryOpcode(op) ? 1 : 0) + (hasUnaryOpcode(op) ? 1 : 0);
         if (owners != 1) return false;
     }
     return true;

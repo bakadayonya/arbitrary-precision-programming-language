@@ -30,7 +30,7 @@ enum class OpCode {
     Shl, // 左移
     Shr, // 右移
     Pow,
-    Neg, // 一元负号
+    Neg,   // 一元负号
     Print, // 弹出栈顶并输出
     Halt,
     Count // 哨兵：可执行指令数
@@ -41,6 +41,8 @@ inline constexpr int OPCODE_COUNT = static_cast<int>(OpCode::Count);
 
 /// 指令名。未知/哨兵返回 "?"，由 allOpNamesDefined() 在编译期拦住漏登记的指令。
 constexpr std::string_view opName(OpCode op) {
+    // 手对齐的名字表，拆开反而难读；下面这段保持原样。
+    // clang-format off
     switch (op) {
         case OpCode::PushConst: return "PUSH";
         case OpCode::Load:      return "LOAD";
@@ -58,6 +60,7 @@ constexpr std::string_view opName(OpCode op) {
         case OpCode::Halt:      return "HALT";
         case OpCode::Count:     break;
     }
+    // clang-format on
     return "?";
 }
 

@@ -15,14 +15,14 @@
 
 #include <iosfwd>
 #include <string_view>
-#include <utility>
 
 namespace sc {
 
 class Engine {
 public:
     Engine() { config_.normalize(); }
-    explicit Engine(Config config) : config_(std::move(config)) { config_.normalize(); }
+    // Config 是 trivially-copyable 的小对象，按值收下再拷贝即可（std::move 在这里是空操作）。
+    explicit Engine(Config config) : config_(config) { config_.normalize(); }
 
     [[nodiscard]] Status runSource(std::string_view source, std::ostream& out, std::ostream& err);
 

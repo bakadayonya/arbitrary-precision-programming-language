@@ -34,7 +34,7 @@ struct Config {
     int maxNodesPerStatement = 4096;                // 单条语句的表达式节点预算
     int maxExprDepth = 4096;                        // 代码生成的递归上限（最后防线）
     int maxStack = 1 << 20;                         // VM 操作数栈上限
-    unsigned long long maxStringBytes = 1ULL << 20;  // 单个字符串的字节上限
+    unsigned long long maxStringBytes = 1ULL << 20; // 单个字符串的字节上限
 
     /// 展示用的默认位数：output-digits 为 0 时由 precision 推导。
     /// 注意：格式化「值」时应当传 outputDigits（0 = 按值自身精度），

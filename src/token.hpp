@@ -39,6 +39,8 @@ struct Token {
 
 /// Token 名。漏登记的类型由 allTokenNamesDefined() 在编译期拦下。
 constexpr std::string_view tokenName(TokenType type) {
+    // 手对齐的名字表，拆开反而难读；下面这段保持原样。
+    // clang-format off
     switch (type) {
         case TokenType::Number:    return "整数";
         case TokenType::Float:     return "小数";
@@ -60,6 +62,7 @@ constexpr std::string_view tokenName(TokenType type) {
         case TokenType::End:       return "输入结束";
         case TokenType::Count:     break;
     }
+    // clang-format on
     return "?";
 }
 

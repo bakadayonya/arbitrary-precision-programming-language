@@ -31,7 +31,7 @@ Result<Options> parseArgs(int argc, char** argv) {
             if (separator == std::string_view::npos || separator == 0)
                 return fail(std::format("--set 需要 name=value 形式: {}", assignment));
             options.settings.emplace_back(std::string(assignment.substr(0, separator)),
-                                         std::string(assignment.substr(separator + 1)));
+                                          std::string(assignment.substr(separator + 1)));
         } else {
             return fail(std::format("未知选项: {}", arg));
         }
@@ -74,18 +74,17 @@ void printHelp(std::string_view program, const Config& defaults, std::ostream& o
         "可调参数（--set / REPL 的 :set，详见 --list-config）:\n",
         program, defaults.precision, defaults.digits(), defaults.digits());
     printConfigHelp(os);
-    std::println(
-        os,
-        "\n"
-        "示例:\n"
-        "  {} -e \"print 2.0 / 3\"\n"
-        "  {} -e \"print 2**100\"\n"
-        "  {} -e \"x = 2**64; print x * x\"\n"
-        "  {} --set precision=512 -e \"print 1.0 / 3\"\n"
-        "  {} -f prog.sc -d\n"
-        "\n"
-        "退出码: 0 正常，1 编译/运行错误，2 命令行用法错误\n",
-        program, program, program, program, program);
+    std::println(os,
+                 "\n"
+                 "示例:\n"
+                 "  {} -e \"print 2.0 / 3\"\n"
+                 "  {} -e \"print 2**100\"\n"
+                 "  {} -e \"x = 2**64; print x * x\"\n"
+                 "  {} --set precision=512 -e \"print 1.0 / 3\"\n"
+                 "  {} -f prog.sc -d\n"
+                 "\n"
+                 "退出码: 0 正常，1 编译/运行错误，2 命令行用法错误\n",
+                 program, program, program, program, program);
 }
 
 } // namespace sc

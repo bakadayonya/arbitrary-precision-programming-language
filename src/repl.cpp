@@ -53,22 +53,21 @@ std::string trim(std::string_view text) {
 }
 
 void printCommands(std::ostream& os) {
-    std::println(os,
-                 "  :help             显示本帮助\n"
-                 "  :quit, :q         退出\n"
-                 "  :dump on|off      开关字节码输出（写 stderr）\n"
-                 "  :vars             列出变量、槽位与当前值\n"
-                 "  :consts           列出常量池\n"
-                 "  :prec             显示 MPFR 精度与输出精度\n"
-                 "  :config           列出全部可调参数及当前值\n"
-                 "  :set <名> <值>    设置一个可调参数，例如 :set precision 512\n"
-                 "  :reset            清空所有变量\n"
-                 "\n"
-                 "  直接输入表达式即可求值，例如:\n"
-                 "    x = 12345678901234567890\n"
-                 "    2.0 / 3\n"
-                 "    2**100\n"
-                 "    print (1 + 2.5) * 3");
+    std::println(os, "  :help             显示本帮助\n"
+                     "  :quit, :q         退出\n"
+                     "  :dump on|off      开关字节码输出（写 stderr）\n"
+                     "  :vars             列出变量、槽位与当前值\n"
+                     "  :consts           列出常量池\n"
+                     "  :prec             显示 MPFR 精度与输出精度\n"
+                     "  :config           列出全部可调参数及当前值\n"
+                     "  :set <名> <值>    设置一个可调参数，例如 :set precision 512\n"
+                     "  :reset            清空所有变量\n"
+                     "\n"
+                     "  直接输入表达式即可求值，例如:\n"
+                     "    x = 12345678901234567890\n"
+                     "    2.0 / 3\n"
+                     "    2**100\n"
+                     "    print (1 + 2.5) * 3");
 }
 
 /// 处理 `:set <name> <value>`。返回 true 表示命令已被识别。
@@ -77,7 +76,8 @@ bool handleSet(const std::string& line, Engine& engine, std::ostream& out, std::
 
     std::string_view rest(line);
     rest.remove_prefix(4);
-    while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) rest.remove_prefix(1);
+    while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t'))
+        rest.remove_prefix(1);
 
     const std::size_t separator = rest.find_first_of(" \t");
     if (rest.empty() || separator == std::string_view::npos) {
@@ -87,7 +87,8 @@ bool handleSet(const std::string& line, Engine& engine, std::ostream& out, std::
 
     std::string_view name = rest.substr(0, separator);
     std::string_view value = rest.substr(separator + 1);
-    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) value.remove_prefix(1);
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t'))
+        value.remove_prefix(1);
 
     auto status = engine.setOption(name, value);
     if (!status) {
@@ -104,8 +105,7 @@ bool handleSet(const std::string& line, Engine& engine, std::ostream& out, std::
 }
 
 /// 返回 true 表示要退出 REPL。
-bool handleCommand(const std::string& line, Engine& engine, std::ostream& out,
-                   std::ostream& err) {
+bool handleCommand(const std::string& line, Engine& engine, std::ostream& out, std::ostream& err) {
     if (line == ":quit" || line == ":q") return true;
 
     if (line == ":help" || line == ":h") {

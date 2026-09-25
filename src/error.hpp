@@ -13,8 +13,7 @@ struct Error {
     bool incomplete = false; // 输入在语句结束前就用完了（REPL 可继续读入下一行）
 };
 
-template <class T>
-using Result = std::expected<T, Error>;
+template <class T> using Result = std::expected<T, Error>;
 using Status = Result<void>;
 
 /// 普通错误。
@@ -30,8 +29,7 @@ using Status = Result<void>;
 namespace detail {
 
 /// 依赖模板参数恒为假，用于让"忘了处理某个 variant 分支"变成编译错误。
-template <class...>
-inline constexpr bool alwaysFalse = false;
+template <class...> inline constexpr bool alwaysFalse = false;
 
 } // namespace detail
 

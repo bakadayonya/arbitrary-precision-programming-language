@@ -21,8 +21,8 @@ static_assert(KIND_PREFIX.size() == static_cast<std::size_t>(VALUE_KIND_COUNT),
 [[nodiscard]] Result<Value> checkInteger(mpz_class value, const ValueLimits& limits) {
     const std::size_t bits = mpz_sizeinbase(value.get_mpz_t(), 2);
     if (bits > limits.maxIntegerBits) {
-        return fail(std::format("整数结果超出位宽上限（{} 位，上限 {} 位）", bits,
-                                limits.maxIntegerBits));
+        return fail(
+            std::format("整数结果超出位宽上限（{} 位，上限 {} 位）", bits, limits.maxIntegerBits));
     }
     return Value(std::move(value));
 }
@@ -54,15 +54,13 @@ template <class IntOp, class FloatOp>
 [[nodiscard]] Result<Value> binaryOp(const Value& a, const Value& b, const ValueLimits& limits,
                                      IntOp intOp, FloatOp floatOp) {
     switch (promote(a.kind(), b.kind())) {
-        case ValueKind::Int:
-            return checkInteger(intOp(a.asInt(), b.asInt()), limits);
+        case ValueKind::Int: return checkInteger(intOp(a.asInt(), b.asInt()), limits);
         case ValueKind::Float:
-            return checkFloat(floatOp(a.toFloat(limits.promotePrecision),
-                                      b.toFloat(limits.promotePrecision)),
-                              limits);
+            return checkFloat(
+                floatOp(a.toFloat(limits.promotePrecision), b.toFloat(limits.promotePrecision)),
+                limits);
         case ValueKind::Str:
-        case ValueKind::Count:
-            break;
+        case ValueKind::Count: break;
     }
     return fail("内部错误：未知的值种类");
 }
@@ -93,8 +91,7 @@ template <class IntOp, class FloatOp>
         } else {
             // 多字节序列整体拷贝；合法性已由词法层保证，非法时按 1 字节兜底。
             const auto decoded = unicode::decodeAt(text, i);
-            const std::size_t length =
-                decoded.ok() ? static_cast<std::size_t>(decoded.length) : 1;
+            const std::size_t length = decoded.ok() ? static_cast<std::size_t>(decoded.length) : 1;
             out.append(text, i, length);
             i += length;
         }
@@ -144,8 +141,7 @@ std::string Value::to_string(int digits) const {
             } else if constexpr (std::is_same_v<T, std::string>) {
                 return payload; // 程序输出：裸文本
             } else {
-                static_assert(detail::alwaysFalse<T>,
-                              "Value::to_string 没有处理这个 variant 备选");
+                static_assert(detail::alwaysFalse<T>, "Value::to_string 没有处理这个 variant 备选");
                 return "<未知值>";
             }
         },
@@ -201,20 +197,23 @@ Result<Value> valueAdd(const Value& a, const Value& b, const ValueLimits& limits
         joined += b.asStr();
         return checkString(std::move(joined), limits);
     }
-    return binaryOp(a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x + y; },
-                    [](const Mpfr& x, const Mpfr& y) { return x + y; });
+    return binaryOp(
+        a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x + y; },
+        [](const Mpfr& x, const Mpfr& y) { return x + y; });
 }
 
 Result<Value> valueSub(const Value& a, const Value& b, const ValueLimits& limits) {
     if (hasString(a, b)) return fail(STRING_ONLY_ADD);
-    return binaryOp(a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x - y; },
-                    [](const Mpfr& x, const Mpfr& y) { return x - y; });
+    return binaryOp(
+        a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x - y; },
+        [](const Mpfr& x, const Mpfr& y) { return x - y; });
 }
 
 Result<Value> valueMul(const Value& a, const Value& b, const ValueLimits& limits) {
     if (hasString(a, b)) return fail(STRING_ONLY_ADD);
-    return binaryOp(a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x * y; },
-                    [](const Mpfr& x, const Mpfr& y) { return x * y; });
+    return binaryOp(
+        a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x * y; },
+        [](const Mpfr& x, const Mpfr& y) { return x * y; });
 }
 
 Result<Value> valueDiv(const Value& a, const Value& b, const ValueLimits& limits) {
@@ -232,8 +231,7 @@ Result<Value> valueDiv(const Value& a, const Value& b, const ValueLimits& limits
             return checkFloat(a.toFloat(limits.promotePrecision) / divisor, limits);
         }
         case ValueKind::Str:
-        case ValueKind::Count:
-            break;
+        case ValueKind::Count: break;
     }
     return fail("内部错误：未知的值种类");
 }
@@ -253,8 +251,7 @@ Result<Value> valueRem(const Value& a, const Value& b, const ValueLimits& limits
             return checkFloat(Mpfr::fmod(a.toFloat(limits.promotePrecision), divisor), limits);
         }
         case ValueKind::Str:
-        case ValueKind::Count:
-            break;
+        case ValueKind::Count: break;
     }
     return fail("内部错误：未知的值种类");
 }
@@ -331,14 +328,10 @@ Result<Value> valuePow(const Value& a, const Value& b, const ValueLimits& limits
 
 Result<Value> valueNeg(const Value& a, const ValueLimits& limits) {
     switch (a.kind()) {
-        case ValueKind::Int:
-            return checkInteger(-a.asInt(), limits);
-        case ValueKind::Float:
-            return checkFloat(-a.toFloat(limits.promotePrecision), limits);
-        case ValueKind::Str:
-            return fail("类型错误：字符串不支持一元负号");
-        case ValueKind::Count:
-            break;
+        case ValueKind::Int: return checkInteger(-a.asInt(), limits);
+        case ValueKind::Float: return checkFloat(-a.toFloat(limits.promotePrecision), limits);
+        case ValueKind::Str: return fail("类型错误：字符串不支持一元负号");
+        case ValueKind::Count: break;
     }
     return fail("内部错误：未知的值种类");
 }

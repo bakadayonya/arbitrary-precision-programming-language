@@ -100,8 +100,7 @@ Result<Expr> Parser::parseExpr(int minBp) {
     }
 
     const Token& head = advance();
-    auto operand =
-        isPrefixOperator ? parsePrefixOperator(head) : (this->*(prefix->parse))(head);
+    auto operand = isPrefixOperator ? parsePrefixOperator(head) : (this->*(prefix->parse))(head);
     if (!operand) return std::unexpected(operand.error());
     Expr left = std::move(*operand);
 

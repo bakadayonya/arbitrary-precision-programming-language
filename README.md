@@ -19,7 +19,8 @@ $ ./sc          # 交互式 REPL
 
 依赖：g++ 14+（需要 C++23 的 `std::expected` / `<print>`）、GMP、MPFR、
 utf8proc（Debian/Ubuntu 上 `sudo apt install libutf8proc-dev`）。
-可选：`clang++-23` + `libc++-23-dev`，用于第二套工具链/标准库的交叉验证（`make clang`）。
+可选：`clang++-23` + `libc++-23-dev`（第二套工具链/标准库，`make clang`）、
+`clang-tidy-23` + `clang-format-23`（静态分析与格式化，`make tidy` / `make format`）。
 
 ```console
 make             # 生成 ./sc（GCC + libstdc++）
@@ -28,8 +29,25 @@ make strict      # 用最严格的警告集重新构建，应当零警告
 make ubsan       # UBSan 构建
 make clang       # 用 clang + libc++ 构建出 ./sc-clang（不覆盖 ./sc）
 make clang-test  # 上面两步 + 对 ./sc-clang 跑一遍测试
+make tidy        # clang-tidy 静态分析（几分钟；配置见 .clang-tidy，应当零输出）
+make format      # 按 .clang-format 格式化源码
+make format-check# 检查格式偏差，有偏差即非零退出
 make clean
 ```
+
+## 代码风格与静态分析
+
+* 风格由 [.clang-format](.clang-format) 固定，而且是**从现有代码反推**出来的，不是套 LLVM 默认：
+  4 空格缩进、100 列、指针/引用靠左、`case` 标签缩进 4、单行 `if (...)`、
+  不重排手写换行的注释、include 分组保持手工顺序。套 LLVM 默认会改 2900 处，这个配置下是 0 处。
+* 少数手写对齐的表格（[src/opcode.hpp](src/opcode.hpp) 与 [src/token.hpp](src/token.hpp) 的
+  `case ...: return "...";` 名表、[src/lexer.cpp](src/lexer.cpp) 的紧凑单行分支）
+  用 `// clang-format off` / `// clang-format on` 包住。
+  注意：这两行注释必须**恰好**是这句话——后面跟任何说明文字都会失配（clang-format 整行精确比较），
+  说明要写在上一行。
+* [.clang-tidy](.clang-tidy) 打开 clang-analyzer / bugprone / performance / portability 四个族，
+  并逐条列出被忽略的误报及原因（`#pragma once`、无符号字面量的位运算、flag 枚举按位或、枚举基类型）。
+  `make tidy` 应当零输出；它只喂 `.cpp`，头文件经由包含它的 TU 被分析。
 
 ## 语言参考
 

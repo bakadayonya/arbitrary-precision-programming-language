@@ -64,9 +64,11 @@ std::string formatError(const Error& error, std::string_view source) {
 
     // 定位到出错所在的整行
     std::size_t begin = pos;
-    while (begin > 0 && source[begin - 1] != '\n') --begin;
+    while (begin > 0 && source[begin - 1] != '\n')
+        --begin;
     std::size_t end = pos;
-    while (end < source.size() && source[end] != '\n') ++end;
+    while (end < source.size() && source[end] != '\n')
+        ++end;
 
     const std::string number = std::to_string(at.line);
     out += std::format("\n  --> 第 {} 行 第 {} 列", at.line, at.column);

@@ -86,6 +86,8 @@ Result<std::vector<Token>> Lexer::tokenize() {
         }
 
         const int start = static_cast<int>(pos_);
+        // 紧凑的单行分支：拆成多行反而更难对照；下面这段保持原样。
+        // clang-format off
         switch (c) {
             case '"': {
                 auto token = readString(start);
@@ -134,6 +136,7 @@ Result<std::vector<Token>> Lexer::tokenize() {
                                         unicode::describe(static_cast<char32_t>(current))),
                             start);
         }
+        // clang-format on
     }
 
     tokens.push_back({TokenType::End, "", static_cast<int>(pos_)});
@@ -144,7 +147,8 @@ Token Lexer::readNumber() {
     const std::size_t start = pos_;
     bool isFloat = false;
 
-    while (pos_ < src_.size() && isAsciiDigit(src_[pos_])) ++pos_;
+    while (pos_ < src_.size() && isAsciiDigit(src_[pos_]))
+        ++pos_;
 
     if (pos_ < src_.size() && src_[pos_] == '.') {
         // "3." 是小数；但 "3.foo" 里的点不是小数点的一部分，留给后面报"非法字符"
@@ -153,7 +157,8 @@ Token Lexer::readNumber() {
         if (!nextIsIdent) {
             isFloat = true;
             ++pos_;
-            while (pos_ < src_.size() && isAsciiDigit(src_[pos_])) ++pos_;
+            while (pos_ < src_.size() && isAsciiDigit(src_[pos_]))
+                ++pos_;
         }
     }
 
@@ -164,7 +169,8 @@ Token Lexer::readNumber() {
         if (pos_ < src_.size() && (src_[pos_] == '+' || src_[pos_] == '-')) ++pos_;
         if (pos_ < src_.size() && isAsciiDigit(src_[pos_])) {
             isFloat = true;
-            while (pos_ < src_.size() && isAsciiDigit(src_[pos_])) ++pos_;
+            while (pos_ < src_.size() && isAsciiDigit(src_[pos_]))
+                ++pos_;
         } else {
             pos_ = saved;
         }
@@ -235,9 +241,9 @@ Result<Token> Lexer::readString(int start) {
         }
 
         if (value.size() > config_.maxStringBytes)
-            return fail(std::format("字符串字面量超出长度上限（上限 {} 字节）",
-                                    config_.maxStringBytes),
-                        start);
+            return fail(
+                std::format("字符串字面量超出长度上限（上限 {} 字节）", config_.maxStringBytes),
+                start);
     }
 
     return Token{TokenType::String, std::move(value), start};
@@ -248,14 +254,28 @@ Status Lexer::readEscape(std::string& out, int escapePos) {
     if (atEnd()) return incomplete("转义序列未结束", escapePos);
 
     switch (byte()) {
-        case 'n': out.push_back('\n'); ++pos_; return {};
-        case 't': out.push_back('\t'); ++pos_; return {};
-        case 'r': out.push_back('\r'); ++pos_; return {};
-        case '"': out.push_back('"'); ++pos_; return {};
-        case '\\': out.push_back('\\'); ++pos_; return {};
+        case 'n':
+            out.push_back('\n');
+            ++pos_;
+            return {};
+        case 't':
+            out.push_back('\t');
+            ++pos_;
+            return {};
+        case 'r':
+            out.push_back('\r');
+            ++pos_;
+            return {};
+        case '"':
+            out.push_back('"');
+            ++pos_;
+            return {};
+        case '\\':
+            out.push_back('\\');
+            ++pos_;
+            return {};
         case 'u': break; // 下面处理 \u{XXXX}
-        default:
-            return fail(std::format("未知的转义序列 '\\{}'", byte()), escapePos);
+        default: return fail(std::format("未知的转义序列 '\\{}'", byte()), escapePos);
     }
 
     ++pos_; // 跳过 'u'

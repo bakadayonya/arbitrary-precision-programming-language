@@ -13,7 +13,7 @@ SRCS := $(wildcard $(SRCDIR)/*.cpp)
 OBJS := $(patsubst $(SRCDIR)/%.cpp,$(BUILDDIR)/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean test strict ubsan clang clang-test
+.PHONY: all clean test strict ubsan clang clang-test tidy format format-check
 
 all: $(BIN)
 
@@ -47,6 +47,25 @@ clang:
 
 clang-test: clang
 	bash tests/run.sh ./sc-clang
+
+# 静态分析与格式化。检查项与忽略项见 .clang-tidy，风格见 .clang-format。
+CLANG_TIDY   ?= clang-tidy-23
+CLANG_FORMAT ?= clang-format-23
+SOURCES      := $(SRCS) $(wildcard $(SRCDIR)/*.hpp)
+
+# 静态分析：只报告本项目的发现（系统头噪音按 .clang-tidy 的 HeaderFilterRegex 过滤）。
+# 只喂 .cpp：头文件会经由包含它的 TU 被分析，单独当 TU 跑只会白白翻倍耗时。
+# 带 clang-analyzer 全量跑一轮大约要几分钟。
+tidy:
+	$(CLANG_TIDY) -quiet $(SRCS) -- -std=c++23 -Isrc
+
+# 应用项目风格
+format:
+	$(CLANG_FORMAT) -i $(SOURCES)
+
+# 检查格式：有偏差就非零退出
+format-check:
+	$(CLANG_FORMAT) --dry-run --Werror $(SOURCES)
 
 clean:
 	rm -rf build $(BIN)

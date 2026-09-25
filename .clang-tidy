@@ -1,0 +1,29 @@
+# clang-tidy 配置。用法：make tidy（需要 clang-tidy-23）。
+#
+# 打开的是"找 bug"的检查族；关掉的每一项都在本代码库上被判定为误报或纯风格，
+# 理由写在下面。保留的检查应当始终保持零输出。
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-signal-handler,
+  -bugprone-branch-clone,
+  -bugprone-reserved-identifier,
+  -bugprone-signed-bitwise,
+  -portability-avoid-pragma-once,
+  -performance-enum-size,
+  -clang-analyzer-optin.core.EnumCastOutOfRange
+# 说明：
+#   signed-bitwise             —— 报 1ULL<<30 / 1U<<20 / &0xC0 这类无符号字面量，全部误报
+#   avoid-pragma-once          —— 项目统一用 #pragma once，这是风格选择不是缺陷
+#   performance-enum-size      —— 建议枚举换 uint8_t 基类型；本项目枚举多与 int 字段同结构，
+#                                 改小基类型不会减小结构体（有填充），收益为零
+#   EnumCastOutOfRange         —— flag 枚举按位或是标准用法（utf8proc 自己的 NFC 实现也这么写）
+#   easily-swappable-parameters —— 对同类型相邻参数大量误报
+#   narrowing-conversions      —— 与 -Wconversion 重复
+#   branch-clone / reserved-identifier / signal-handler —— 在本代码库里属噪音
+HeaderFilterRegex: '.*/src/.*'
