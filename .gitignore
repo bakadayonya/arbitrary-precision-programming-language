@@ -1,0 +1,4 @@
+/build/
+/sc
+# make ubsan BIN=sc-ubsan 的产物（对象目录已在 /build/ 下）
+/sc-ubsan
