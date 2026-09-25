@@ -1,6 +1,6 @@
-# sc — C++23 + GMP/MPFR 的小型语言编译器
+# sc — C++23 + GMP/MPFR/utf8proc 的小型语言编译器
 
-`sc` 是一个玩具语言的编译器 + 栈式虚拟机：词法分析 → 递归下降解析 → AST →
+`sc` 是一个玩具语言的编译器 + 栈式虚拟机：词法分析 → Pratt 解析（表驱动 parselet）→ AST →
 字节码 → 执行。整数用 GMP（任意精度），小数用 MPFR（默认 256 位二进制 ≈ 77 位十进制，
 精度可调且按值携带）；源码按 **UTF-8** 处理——标识符可以用中文等 Unicode 字符，
 字符串字面量原生支持。
@@ -145,7 +145,7 @@ $ ./sc --set precision=128 -e "print 1.0 / 3"
 | [src/opcode.hpp](src/opcode.hpp) | 指令集 + 指令名（漏登记即编译失败） |
 | [src/operators.hpp](src/operators.hpp) | **运算符表**：优先级/结合性/指令/求值函数的单一来源 |
 | [src/ast.hpp](src/ast.hpp), [src/ast.cpp](src/ast.cpp) | AST 节点 |
-| [src/parser.hpp](src/parser.hpp), [src/parser.cpp](src/parser.cpp) | 优先级爬升解析、深度与规模防护 |
+| [src/parser.hpp](src/parser.hpp), [src/parser.cpp](src/parser.cpp) | **Pratt 解析器**：前缀/中缀/语句三层 parselet 分派，绑定力来自运算符表 |
 | [src/bytecode.hpp](src/bytecode.hpp), [src/bytecode.cpp](src/bytecode.cpp) | `Instruction`、`CompilationUnit`、反汇编 |
 | [src/symbols.hpp](src/symbols.hpp), [src/symbols.cpp](src/symbols.cpp) | **会话状态**：变量表 + 常量池，可完整快照/回滚 |
 | [src/compiler.hpp](src/compiler.hpp), [src/compiler.cpp](src/compiler.cpp) | AST → 字节码（无状态，产物是 `CompilationUnit`） |
@@ -159,7 +159,7 @@ $ ./sc --set precision=128 -e "print 1.0 / 3"
 
 ## 如何扩展
 
-三条已经被编译期断言保护起来的扩展路径：
+四条已经被编译期断言保护起来的扩展路径：
 
 * **加一个可调参数**（1 个文件）：在 [src/config.hpp](src/config.hpp) 的 `Config` 里加字段、
   在 `CONFIG_FIELDS` 里加一行。`--set`、`--list-config`、`--help`、`:set`、`:config`
@@ -169,17 +169,22 @@ $ ./sc --set precision=128 -e "print 1.0 / 3"
   [src/opcode.hpp](src/opcode.hpp)（枚举 + 名字 + 归属，3 行）、
   [src/value.hpp](src/value.hpp)/[src/value.cpp](src/value.cpp)（求值函数，11 行）、
   [src/operators.hpp](src/operators.hpp)（表里加一行，3 行）。
-  **解析器、代码生成、VM、CLI、REPL 一行都不用改**——优先级、结合性、指令、求值全部从表推导。
+  **解析器、代码生成、VM、CLI、REPL 一行都不用改**——优先级、结合性、指令、求值全部从表推导：
+  前缀运算符由 `UNARY_OPS` 驱动，中缀运算符由 `BINARY_OPS` 驱动（[src/parser.cpp](src/parser.cpp)
+  的中缀环直接扫这张表）。结合性写成显式的 `(leftBp, rightBp)` 对：
+  左结合 = `(2p, 2p+1)`，右结合 = `(2p+1, 2p)`，要非结合只需换下界。
   （若该运算符对小数也有定义，还需要在 `Mpfr` 上加一个原语，多一个文件。）
   漏登记会在编译期被拦住：忘了 `opName` → `allOpNamesDefined()` 失败；
   忘了登记进任何一张表/登记两次 → `opcodeCoverageOk()` 失败；忘了 token 名 → `allTokenNamesDefined()` 失败。
+* **加一条语句**（为将来的 `if`/`while`/`block` 准备）：在 [src/parser.hpp](src/parser.hpp) 的
+  `STMT_PARSELETS` 里加一行 + 写一个 `Result<Stmt> parseXxxStatement(const Token&)`；
+  语句节点加进 [src/ast.hpp](src/ast.hpp) 的 `StmtVariant`；
+  再在 [src/compiler.cpp](src/compiler.cpp) 的 `genStmt` 补一个分支。
+  **漏了编译期就会报错**（`static_assert(detail::alwaysFalse<T>)`），不会静默生成空代码。
+  词法层需要的话再加一个关键字 token。
 * **加一种值类型**（1~2 个文件）：在 `Value` 的 variant 里加备选、在 `ValueKind` 里加种类、
   在 `KIND_PREFIX` 里加常量池前缀。三处数量不一致会被 `static_assert` 拦下；
   运算分派是 `switch (ValueKind)` 且没有 `default`，漏分支会被 `-Wswitch` 拦下。
-
-新增 AST 节点则由 [src/compiler.cpp](src/compiler.cpp) 里 `if constexpr` 链末尾的
-`static_assert(detail::alwaysFalse<T>)` 兜底：忘了处理会**编译失败**，
-而不是静默生成空代码（这正是重构前最危险的一处）。
 
 ## 设计说明与已知边界
 

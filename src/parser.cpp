@@ -63,7 +63,7 @@ Status Parser::endStatement() {
 Result<std::vector<Stmt>> Parser::parse() {
     std::vector<Stmt> stmts;
     while (!check(TokenType::End)) {
-        if (check(TokenType::Semicolon)) { // 空语句
+        if (check(TokenType::Semicolon)) { // 空语句（语句分隔符，不是语句）
             advance();
             continue;
         }
@@ -76,112 +76,145 @@ Result<std::vector<Stmt>> Parser::parse() {
     return stmts;
 }
 
-Result<Stmt> Parser::parseStatement() {
-    if (check(TokenType::Print)) {
-        const int printPos = advance().pos;
-        auto expr = parseExpression();
-        if (!expr) return std::unexpected(expr.error());
-        if (auto ok = endStatement(); !ok) return std::unexpected(ok.error());
-        return makePrint(printPos, std::move(*expr));
-    }
+// ---------------------------------------------------------------- Pratt 驱动
 
-    if (check(TokenType::Ident) && checkNext(TokenType::Assign)) {
-        const Token& nameToken = advance();
-        std::string name = nameToken.value;
-        advance(); // '='
-        auto expr = parseExpression();
-        if (!expr) return std::unexpected(expr.error());
-        if (auto ok = endStatement(); !ok) return std::unexpected(ok.error());
-        return makeAssign(std::move(name), nameToken.pos, std::move(*expr));
-    }
-
-    const int stmtPos = peek().pos;
-    auto expr = parseExpression();
-    if (!expr) return std::unexpected(expr.error());
-    if (auto ok = endStatement(); !ok) return std::unexpected(ok.error());
-    return makeExprStmt(stmtPos, std::move(*expr));
-}
-
-Result<Expr> Parser::parseExpression() { return parseBinary(0); }
-
-Result<Expr> Parser::parseBinary(int minPrecedence) {
-    // 所有递归环（括号、前缀运算符、** 的右操作数）都经过 parseBinary，
-    // 因此这一处深度计数就等于真实递归深度，不会被重复计数。
+Result<Expr> Parser::parseExpr(int minBp) {
+    // 所有递归环（括号、前缀运算符的操作数、中缀运算符的右操作数）都经过这里，
+    // 所以深度计数只需要放在这一处。
     if (depth_ >= config_.maxParseDepth) return fail("表达式嵌套过深", peek().pos);
     const DepthGuard guard(depth_);
 
-    auto first = parseUnary();
-    if (!first) return std::unexpected(first.error());
-    Expr left = std::move(*first);
+    // 前缀部分（nud）：查 UNARY_OPS 里的前缀运算符，或基本前缀表。
+    const Token& first = peek();
+    const PrefixParselet* prefix = nullptr;
+    for (const PrefixParselet& candidate : PRIMARY_PREFIX_PARSELETS) {
+        if (candidate.token == first.type) {
+            prefix = &candidate;
+            break;
+        }
+    }
+    const bool isPrefixOperator = findUnary(first.type) != nullptr;
+    if (prefix == nullptr && !isPrefixOperator) {
+        if (check(TokenType::End)) return incomplete("表达式未结束", first.pos);
+        return fail(std::format("意外的 token: {}", tokenName(first.type)), first.pos);
+    }
 
-    while (const BinaryOpInfo* info = findBinary(peek().type)) {
-        if (info->precedence < minPrecedence) break;
+    const Token& head = advance();
+    auto operand =
+        isPrefixOperator ? parsePrefixOperator(head) : (this->*(prefix->parse))(head);
+    if (!operand) return std::unexpected(operand.error());
+    Expr left = std::move(*operand);
+
+    // 中缀部分（led 环）：绑定力决定是否把下一个运算符吸收进来。
+    // 这张表就是 BINARY_OPS —— 加一个中缀运算符不需要改本文件。
+    while (const BinaryOpInfo* op = findBinary(peek().type)) {
+        if (op->leftBp < minBp) break;
         const Token& opToken = advance();
-        // 左结合：右操作数必须绑得更紧；右结合：允许同级继续向右递归。
-        const int nextMin = info->assoc == Assoc::Right ? info->precedence : info->precedence + 1;
-        auto right = parseBinary(nextMin);
-        if (!right) return std::unexpected(right.error());
-        if (auto ok = noteNode(opToken.pos); !ok) return std::unexpected(ok.error());
-        left = makeBinary(opToken.type, opToken.pos, std::move(left), std::move(*right));
+        auto combined = parseBinaryOperator(*op, opToken, std::move(left));
+        if (!combined) return std::unexpected(combined.error());
+        left = std::move(*combined);
     }
     return left;
 }
 
-Result<Expr> Parser::parseUnary() {
-    if (const UnaryOpInfo* info = findUnary(peek().type)) {
-        const Token& opToken = advance();
-        auto operand = parseBinary(info->operandPrecedence);
-        if (!operand) return std::unexpected(operand.error());
-        if (auto ok = noteNode(opToken.pos); !ok) return std::unexpected(ok.error());
-        return makeUnary(opToken.type, opToken.pos, std::move(*operand));
+Result<Stmt> Parser::parseStatement() {
+    // 语句 parselet：按起始 token 分派。
+    for (const StmtParselet& parselet : STMT_PARSELETS) {
+        if (parselet.token != peek().type) continue;
+        const Token& keyword = advance();
+        return (this->*(parselet.parse))(keyword);
     }
-    return parsePrimary();
+
+    // 赋值在本语言里是语句而不是表达式（所以 `x = 1` 不打印、`x = y = 1` 不合法），
+    // 需要两 token 前瞻 Ident '='。将来若把赋值提成表达式，
+    // 就是加一个绑定力最低、右结合的中缀 parselet，这两行即可删掉。
+    if (check(TokenType::Ident) && checkNext(TokenType::Assign)) return parseAssignStatement();
+    return parseExpressionStatement();
 }
 
-Result<Expr> Parser::parsePrimary() {
-    if (check(TokenType::Number)) {
-        const Token& token = advance();
-        mpz_class z;
-        if (z.set_str(token.value, 10) != 0)
-            return fail(std::format("整数解析失败: {}", token.value), token.pos);
-        if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
-        return makeInt(std::move(z));
-    }
+// ------------------------------------------------------------ 表达式 parselet
 
-    if (check(TokenType::Float)) {
-        const Token& token = advance();
-        auto value = Mpfr::fromString(token.value, config_.precision);
-        if (!value) return fail(std::format("小数解析失败: {}", token.value), token.pos);
-        // MPFR 对"合法但超范围"的字面量会静默给出 inf/nan；默认按策略拒绝。
-        if (!config_.allowNonFinite && !value->isFinite())
-            return fail(std::format("小数超出可表示范围: {}", token.value), token.pos);
-        if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
-        return makeFloat(std::move(*value));
-    }
+Result<Expr> Parser::parseIntLiteral(const Token& token) {
+    mpz_class value;
+    if (value.set_str(token.value, 10) != 0)
+        return fail(std::format("整数解析失败: {}", token.value), token.pos);
+    if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
+    return makeInt(std::move(value));
+}
 
-    if (check(TokenType::String)) {
-        const Token& token = advance();
-        if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
-        return makeStr(token.value);
-    }
+Result<Expr> Parser::parseFloatLiteral(const Token& token) {
+    auto value = Mpfr::fromString(token.value, config_.precision);
+    if (!value) return fail(std::format("小数解析失败: {}", token.value), token.pos);
+    // MPFR 对"合法但超范围"的字面量会静默给出 inf/nan；默认按策略拒绝。
+    if (!config_.allowNonFinite && !value->isFinite())
+        return fail(std::format("小数超出可表示范围: {}", token.value), token.pos);
+    if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
+    return makeFloat(std::move(*value));
+}
 
-    if (check(TokenType::Ident)) {
-        const Token& token = advance();
-        if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
-        return makeVar(token.value, token.pos);
-    }
+Result<Expr> Parser::parseStringLiteral(const Token& token) {
+    if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
+    return makeStr(token.value);
+}
 
-    if (check(TokenType::LParen)) {
-        advance();
-        auto expr = parseExpression();
-        if (!expr) return std::unexpected(expr.error());
-        auto rparen = expect(TokenType::RParen, "')'");
-        if (!rparen) return std::unexpected(rparen.error());
-        return expr;
-    }
+Result<Expr> Parser::parseVariable(const Token& token) {
+    if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
+    return makeVar(token.value, token.pos);
+}
 
-    if (check(TokenType::End)) return incomplete("表达式未结束", peek().pos);
-    return fail(std::format("意外的 token: {}", tokenName(peek().type)), peek().pos);
+Result<Expr> Parser::parseGroup(const Token& token) {
+    (void)token; // 分组不产生节点，位置信息用不上
+    auto inner = parseExpr(0);
+    if (!inner) return std::unexpected(inner.error());
+    auto closing = expect(TokenType::RParen, "')'");
+    if (!closing) return std::unexpected(closing.error());
+    return inner;
+}
+
+Result<Expr> Parser::parsePrefixOperator(const Token& token) {
+    const UnaryOpInfo* op = findUnary(token.type);
+    if (op == nullptr)
+        return fail(std::format("无效的前缀运算符: {}", tokenName(token.type)), token.pos);
+
+    auto operand = parseExpr(op->operandBp);
+    if (!operand) return std::unexpected(operand.error());
+    if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
+    return makeUnary(token.type, token.pos, std::move(*operand));
+}
+
+Result<Expr> Parser::parseBinaryOperator(const BinaryOpInfo& op, const Token& token, Expr left) {
+    // 右操作数按 rightBp 解析：下界更高就不再吸收同级运算符（左结合），
+    // 下界相同则允许同级继续进右子树（右结合）。
+    auto right = parseExpr(op.rightBp);
+    if (!right) return std::unexpected(right.error());
+    if (auto ok = noteNode(token.pos); !ok) return std::unexpected(ok.error());
+    return makeBinary(token.type, token.pos, std::move(left), std::move(*right));
+}
+
+// -------------------------------------------------------------- 语句 parselet
+
+Result<Stmt> Parser::parsePrintStatement(const Token& keyword) {
+    auto expr = parseExpr(0);
+    if (!expr) return std::unexpected(expr.error());
+    if (auto ok = endStatement(); !ok) return std::unexpected(ok.error());
+    return makePrint(keyword.pos, std::move(*expr));
+}
+
+Result<Stmt> Parser::parseAssignStatement() {
+    const Token& nameToken = advance(); // Ident
+    advance();                          // '='
+    auto value = parseExpr(0);
+    if (!value) return std::unexpected(value.error());
+    if (auto ok = endStatement(); !ok) return std::unexpected(ok.error());
+    return makeAssign(nameToken.value, nameToken.pos, std::move(*value));
+}
+
+Result<Stmt> Parser::parseExpressionStatement() {
+    const int start = peek().pos;
+    auto expr = parseExpr(0);
+    if (!expr) return std::unexpected(expr.error());
+    if (auto ok = endStatement(); !ok) return std::unexpected(ok.error());
+    return makeExprStmt(start, std::move(*expr));
 }
 
 } // namespace sc

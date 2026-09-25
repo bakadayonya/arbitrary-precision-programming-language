@@ -275,6 +275,19 @@ check_err "左移位宽预算（与幂共用）"    1 "左移结果超出位宽�
 check_err "位宽预算可调"                1 "上限 100 位" --set max-integer-bits=100 -e 'print 1 << 200'
 check_err "单字符 < 给出提示"           1 "移位要写成" -e 'print 3 < 4'
 check_err "单字符 > 给出提示"           1 '移位要写成' -e 'print 3 > 4'
+
+echo "== Pratt 绑定力（左右结合 / 前缀与幂的相互作用）=="
+check_out "混合链：+ - * / %"           0 "5" -e 'print 1 + 2 * 3 - 4 / 2 % 3'
+check_out "% 左结合"                    0 "4" -e 'print 100 % 7 * 2'
+check_out "幂右结合再取余"              0 "2" -e 'print 2 ** 3 ** 2 % 5'
+check_out "一元负号比幂松"              0 "-4" -e 'print -2 ** 2 % 5'
+check_out "一元负号比乘紧"              0 "-18" -e 'print 2 * -3 ** 2'
+check_out "移位低于加号（两侧）"        0 "8" -e 'print 1 + 1 << 1 + 1'
+check_out "移位低于加号（右侧）"        0 "1" -e 'print 7 >> 1 + 1'
+check_out "同级移位左结合"              0 "32" -e 'print 1 << 2 << 3'
+check_out "连续前缀负号"                0 "5" -e 'print - - 5'
+check_out "括号压过一切"                0 "-9" -e 'print -(1 + 2) * 3'
+check_out "语句混合分派"                0 $'2\n2' -e 'x = 1; print x + 1; x * 2'
 check_err "字符串不能移位"              1 "字符串只支持" -e 'print "a" << 1'
 
 echo "== UTF-8：标识符 =="
