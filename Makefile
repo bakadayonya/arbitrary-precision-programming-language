@@ -13,7 +13,7 @@ SRCS := $(wildcard $(SRCDIR)/*.cpp)
 OBJS := $(patsubst $(SRCDIR)/%.cpp,$(BUILDDIR)/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean test strict ubsan
+.PHONY: all clean test strict ubsan clang clang-test
 
 all: $(BIN)
 
@@ -37,6 +37,16 @@ strict:
 # UBSan 构建
 ubsan:
 	$(MAKE) CXXFLAGS="-std=c++23 -O1 -g -fsanitize=undefined -fno-sanitize-recover=all -Wall -Wextra -Wpedantic"
+
+# 第二套工具链 + 第二套标准库（clang + libc++），产物是 sc-clang，不覆盖 ./sc。
+# 注意：-Wuseless-cast 是 GCC 专有，这里不能用；依赖 libc++-<版本>-dev。
+CLANGXX   ?= clang++-23
+CLANGFLAGS ?= -std=c++23 -O2 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wold-style-cast -stdlib=libc++
+clang:
+	$(MAKE) CXX="$(CLANGXX)" CXXFLAGS="$(CLANGFLAGS)" BIN=sc-clang
+
+clang-test: clang
+	bash tests/run.sh ./sc-clang
 
 clean:
 	rm -rf build $(BIN)

@@ -19,12 +19,15 @@ $ ./sc          # 交互式 REPL
 
 依赖：g++ 14+（需要 C++23 的 `std::expected` / `<print>`）、GMP、MPFR、
 utf8proc（Debian/Ubuntu 上 `sudo apt install libutf8proc-dev`）。
+可选：`clang++-23` + `libc++-23-dev`，用于第二套工具链/标准库的交叉验证（`make clang`）。
 
 ```console
-make            # 生成 ./sc
-make test       # 运行 tests/run.sh（108 项回归测试）
-make strict     # 用最严格的警告集重新构建，应当零警告
-make ubsan      # UBSan 构建
+make             # 生成 ./sc（GCC + libstdc++）
+make test        # 运行 tests/run.sh（146 项回归测试）
+make strict      # 用最严格的警告集重新构建，应当零警告
+make ubsan       # UBSan 构建
+make clang       # 用 clang + libc++ 构建出 ./sc-clang（不覆盖 ./sc）
+make clang-test  # 上面两步 + 对 ./sc-clang 跑一遍测试
 make clean
 ```
 
