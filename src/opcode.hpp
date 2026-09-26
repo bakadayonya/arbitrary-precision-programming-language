@@ -30,8 +30,18 @@ enum class OpCode {
     Shl, // 左移
     Shr, // 右移
     Pow,
-    Neg,   // 一元负号
-    Print, // 弹出栈顶并输出
+    Lt,          // <
+    Le,          // <=
+    Gt,          // >
+    Ge,          // >=
+    Eq,          // ==
+    Ne,          // !=
+    Neg,         // 一元负号
+    Call,        // 调用内建函数：operand 是 builtins 表下标，参数个数由表项决定
+    Test,        // 校验栈顶是布尔（条件表达式），原样留在栈上
+    Jump,        // 无条件跳转：pc += operand（相对下一条指令）
+    JumpIfFalse, // 弹出布尔，为假时按 operand 跳转
+    Print,       // 弹出栈顶并输出
     Halt,
     Count // 哨兵：可执行指令数
 };
@@ -55,7 +65,17 @@ constexpr std::string_view opName(OpCode op) {
         case OpCode::Shl:       return "SHL";
         case OpCode::Shr:       return "SHR";
         case OpCode::Pow:       return "POW";
+        case OpCode::Lt:        return "LT";
+        case OpCode::Le:        return "LE";
+        case OpCode::Gt:        return "GT";
+        case OpCode::Ge:        return "GE";
+        case OpCode::Eq:        return "EQ";
+        case OpCode::Ne:        return "NE";
         case OpCode::Neg:       return "NEG";
+        case OpCode::Call:      return "CALL";
+        case OpCode::Test:      return "TEST";
+        case OpCode::Jump:      return "JMP";
+        case OpCode::JumpIfFalse: return "JMPF";
         case OpCode::Print:     return "PRINT";
         case OpCode::Halt:      return "HALT";
         case OpCode::Count:     break;
@@ -70,6 +90,10 @@ constexpr bool isVmCore(OpCode op) {
         case OpCode::PushConst:
         case OpCode::Load:
         case OpCode::Store:
+        case OpCode::Call:
+        case OpCode::Test:
+        case OpCode::Jump:
+        case OpCode::JumpIfFalse:
         case OpCode::Print:
         case OpCode::Halt: return true;
         case OpCode::Add:
@@ -80,6 +104,12 @@ constexpr bool isVmCore(OpCode op) {
         case OpCode::Shl:
         case OpCode::Shr:
         case OpCode::Pow:
+        case OpCode::Lt:
+        case OpCode::Le:
+        case OpCode::Gt:
+        case OpCode::Ge:
+        case OpCode::Eq:
+        case OpCode::Ne:
         case OpCode::Neg: return false;
         case OpCode::Count: break;
     }

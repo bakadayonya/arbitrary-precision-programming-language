@@ -15,11 +15,28 @@ enum class TokenType {
     Star,
     StarStar, // **
     Slash,
-    Percent,    // %
-    ShiftLeft,  // <<
-    ShiftRight, // >>
+    Percent,      // %
+    ShiftLeft,    // <<
+    ShiftRight,   // >>
+    Less,         // <
+    LessEqual,    // <=
+    Greater,      // >
+    GreaterEqual, // >=
+    Equal,        // ==
+    NotEqual,     // !=
+    True,         // 布尔字面量 true
+    False,        // 布尔字面量 false
+    If,
+    Else,
+    While,
+    For,
+    Break,
+    Continue,
     LParen,
     RParen,
+    Comma,  // ,（内建函数调用的实参分隔符）
+    LBrace, // {
+    RBrace, // }
     Ident,
     Assign,
     Print,
@@ -42,25 +59,42 @@ constexpr std::string_view tokenName(TokenType type) {
     // 手对齐的名字表，拆开反而难读；下面这段保持原样。
     // clang-format off
     switch (type) {
-        case TokenType::Number:    return "整数";
-        case TokenType::Float:     return "小数";
-        case TokenType::String:    return "字符串";
-        case TokenType::Plus:      return "+";
-        case TokenType::Minus:     return "-";
-        case TokenType::Star:      return "*";
-        case TokenType::StarStar:  return "**";
-        case TokenType::Slash:     return "/";
-        case TokenType::Percent:   return "%";
-        case TokenType::ShiftLeft: return "<<";
-        case TokenType::ShiftRight: return ">>";
-        case TokenType::LParen:    return "(";
-        case TokenType::RParen:    return ")";
-        case TokenType::Ident:     return "标识符";
-        case TokenType::Assign:    return "=";
-        case TokenType::Print:     return "print";
-        case TokenType::Semicolon: return ";";
-        case TokenType::End:       return "输入结束";
-        case TokenType::Count:     break;
+        case TokenType::Number:       return "整数";
+        case TokenType::Float:        return "小数";
+        case TokenType::String:       return "字符串";
+        case TokenType::Plus:         return "+";
+        case TokenType::Minus:        return "-";
+        case TokenType::Star:         return "*";
+        case TokenType::StarStar:     return "**";
+        case TokenType::Slash:        return "/";
+        case TokenType::Percent:      return "%";
+        case TokenType::ShiftLeft:    return "<<";
+        case TokenType::ShiftRight:   return ">>";
+        case TokenType::Less:         return "<";
+        case TokenType::LessEqual:    return "<=";
+        case TokenType::Greater:      return ">";
+        case TokenType::GreaterEqual: return ">=";
+        case TokenType::Equal:        return "==";
+        case TokenType::NotEqual:     return "!=";
+        case TokenType::True:         return "true";
+        case TokenType::False:        return "false";
+        case TokenType::If:           return "if";
+        case TokenType::Else:         return "else";
+        case TokenType::While:        return "while";
+        case TokenType::For:          return "for";
+        case TokenType::Break:        return "break";
+        case TokenType::Continue:     return "continue";
+        case TokenType::LParen:       return "(";
+        case TokenType::RParen:       return ")";
+        case TokenType::Comma:        return ",";
+        case TokenType::LBrace:       return "{";
+        case TokenType::RBrace:       return "}";
+        case TokenType::Ident:        return "标识符";
+        case TokenType::Assign:       return "=";
+        case TokenType::Print:        return "print";
+        case TokenType::Semicolon:    return ";";
+        case TokenType::End:          return "输入结束";
+        case TokenType::Count:        break;
     }
     // clang-format on
     return "?";

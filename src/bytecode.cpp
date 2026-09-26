@@ -1,8 +1,11 @@
 #include "bytecode.hpp"
 
+#include "builtins.hpp"
+
 #include <cstddef>
 #include <ostream>
 #include <print>
+#include <string_view>
 
 namespace sc {
 
@@ -27,6 +30,16 @@ void dumpBytecode(std::ostream& os, const CompilationUnit& unit, int digits) {
             case OpCode::Store:
                 std::println(os, "{:>3}: {:5} {}", i, opName(ins.op), ins.operand);
                 break;
+            case OpCode::Call: {
+                // 操作数是内建函数表下标；显示名字比显示下标可读得多。
+                const std::string_view name = builtinName(ins.operand);
+                if (name.empty())
+                    std::println(os, "{:>3}: {:5} [{}] <非法内建函数>", i, opName(ins.op),
+                                 ins.operand);
+                else
+                    std::println(os, "{:>3}: {:5} {}", i, opName(ins.op), name);
+                break;
+            }
             default: std::println(os, "{:>3}: {}", i, opName(ins.op)); break;
         }
     }

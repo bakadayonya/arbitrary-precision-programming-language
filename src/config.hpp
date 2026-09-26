@@ -29,7 +29,7 @@ struct Config {
     int outputDigits = 0;                           // 输出位数；0 = 按每个值自身的精度
     bool allowNonFinite = false;                    // 是否允许 inf/nan
     unsigned long long maxIntegerBits = 1ULL << 30; // 单个整数的位宽预算
-    long long maxIntExponent = 10'000'000;          // 整数幂的指数上限（CPU 预算）
+    long long maxIntExponent = 10'000'000;          // 整数幂 / 大整数内建函数的规模上限（CPU 预算）
     int maxParseDepth = 256;                        // 语法嵌套深度上限
     int maxNodesPerStatement = 4096;                // 单条语句的表达式节点预算
     int maxExprDepth = 4096;                        // 代码生成的递归上限（最后防线）
@@ -84,7 +84,7 @@ inline constexpr std::array<ConfigField, 10> CONFIG_FIELDS{{
     {"output-digits", "输出有效数字位数；0 = 按每个值自身的精度", &Config::outputDigits},
     {"allow-non-finite", "是否允许 inf/nan（默认拒绝）", &Config::allowNonFinite},
     {"max-integer-bits", "单个整数的位宽预算（受 GMP 硬上限约束）", &Config::maxIntegerBits},
-    {"max-int-exponent", "整数幂的指数上限", &Config::maxIntExponent},
+    {"max-int-exponent", "整数幂与大整数内建函数的规模上限（CPU 预算）", &Config::maxIntExponent},
     {"max-string-bytes", "单个字符串的字节上限", &Config::maxStringBytes},
     {"max-parse-depth", "语法嵌套深度上限", &Config::maxParseDepth},
     {"max-nodes", "单条语句的表达式节点预算", &Config::maxNodesPerStatement},

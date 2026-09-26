@@ -35,11 +35,23 @@ constexpr int leftAssocRight(int level) { return 2 * level + 1; }
 constexpr int rightAssocLeft(int level) { return 2 * level + 1; }
 constexpr int rightAssocRight(int level) { return 2 * level; }
 
-/// 优先级级别：越大结合越紧。低位预留给将来的比较/逻辑运算符。
+/// 优先级级别：越大结合越紧。
+/// 比较是级别 0（最低），低位不再预留；表本身的顺序不影响解析，绑定力才决定一切。
+inline constexpr int LEVEL_COMPARE = 0;
 inline constexpr int LEVEL_SHIFT = 1;
 inline constexpr int LEVEL_ADD = 2;
 inline constexpr int LEVEL_MUL = 3;
 inline constexpr int LEVEL_POWER = 4;
+
+/// 比较统一取左绑定力 = 0、右绑定力 = 1。
+/// 与 `<` 同级的下界是 1，所以同级比较不会进右子树：整个比较层是**左结合**的，
+/// `1 < 2 < 3` 解析成 `(1 < 2) < 3`（和 C/C++ 一样，不是 Python 的链式比较），
+/// 然后在运行期以"布尔值不支持排序比较"失败——错误消息会提示改写方式。
+/// 左绑定力 0 低于移位的 2，所以 `1 << 2 < 5` 是 `(1 << 2) < 5`。
+/// 注意 `<` 与 `==` 同级，因此 `1 == 2 == false` 是合法的（解析成 `(1 == 2) == false`），
+/// 只有"排序比较作用在布尔上"才会失败——类型系统而不是语法在拦这类链式写法。
+inline constexpr int BP_COMPARE_LEFT = 0;
+inline constexpr int BP_COMPARE_RIGHT = 1;
 
 /// 前缀运算符操作数的下界：比乘除（左 6 / 右 7）紧、不比幂（左 9 / 右 8）松。
 /// 这组数值让 -2**2 == -(2**2) 且 -7/2 == (-7)/2 同时成立。
@@ -60,7 +72,13 @@ struct UnaryOpInfo {
     UnaryEval eval;
 };
 
-inline constexpr std::array<BinaryOpInfo, 8> BINARY_OPS{{
+inline constexpr std::array<BinaryOpInfo, 14> BINARY_OPS{{
+    {TokenType::Less, OpCode::Lt, BP_COMPARE_LEFT, BP_COMPARE_RIGHT, &valueLt},
+    {TokenType::LessEqual, OpCode::Le, BP_COMPARE_LEFT, BP_COMPARE_RIGHT, &valueLe},
+    {TokenType::Greater, OpCode::Gt, BP_COMPARE_LEFT, BP_COMPARE_RIGHT, &valueGt},
+    {TokenType::GreaterEqual, OpCode::Ge, BP_COMPARE_LEFT, BP_COMPARE_RIGHT, &valueGe},
+    {TokenType::Equal, OpCode::Eq, BP_COMPARE_LEFT, BP_COMPARE_RIGHT, &valueEq},
+    {TokenType::NotEqual, OpCode::Ne, BP_COMPARE_LEFT, BP_COMPARE_RIGHT, &valueNe},
     {TokenType::ShiftLeft, OpCode::Shl, leftAssocLeft(LEVEL_SHIFT), leftAssocRight(LEVEL_SHIFT),
      &valueShl},
     {TokenType::ShiftRight, OpCode::Shr, leftAssocLeft(LEVEL_SHIFT), leftAssocRight(LEVEL_SHIFT),

@@ -116,6 +116,10 @@ Mpfr Mpfr::pow(const Mpfr& base, const Mpfr& exponent) {
     return r;
 }
 
+int Mpfr::compare(const Mpfr& other) const { return mpfr_cmp(v_, other.v_); }
+
+bool Mpfr::equals(const Mpfr& other) const { return mpfr_equal_p(v_, other.v_) != 0; }
+
 Mpfr Mpfr::fmod(const Mpfr& a, const Mpfr& b) {
     Mpfr r(combinePrec(a.precision(), b.precision()));
     // 与 C 的 fmod 一致：余数取被除数的符号，和"向零截断"的整数除法配套。

@@ -12,7 +12,7 @@ namespace {
 
 /// 每种 ValueKind 在常量池键里的前缀。长度必须与 VALUE_KIND_COUNT 一致。
 constexpr std::array<std::string_view, static_cast<std::size_t>(VALUE_KIND_COUNT)> KIND_PREFIX{
-    "i:", "f:", "s:"};
+    "i:", "f:", "s:", "b:"};
 
 static_assert(KIND_PREFIX.size() == static_cast<std::size_t>(VALUE_KIND_COUNT),
               "新增 ValueKind 时要在 KIND_PREFIX 里补上前缀");
@@ -45,11 +45,24 @@ static_assert(KIND_PREFIX.size() == static_cast<std::size_t>(VALUE_KIND_COUNT),
 /// 字符串只参与 '+' 连接，其余二元运算一律在这里被拒绝。
 constexpr const char* STRING_ONLY_ADD = "类型错误：字符串只支持 '+'（连接）";
 
+/// 布尔不是数值：算术/移位/幂都要求数值塔里的操作数。
+constexpr const char* BOOL_NOT_NUMBER = "类型错误：布尔值不参与算术运算";
+
 [[nodiscard]] bool hasString(const Value& a, const Value& b) { return a.isStr() || b.isStr(); }
+
+[[nodiscard]] bool hasBool(const Value& a, const Value& b) { return a.isBool() || b.isBool(); }
+
+/// 算术类运算的公共前置检查：字符串只支持 '+'，布尔不参与算术。
+/// 数值运算入口都先过这里，后续的 promote()/switch 就只需要面对 Int/Float。
+[[nodiscard]] Status checkArithmeticOperands(const Value& a, const Value& b) {
+    if (hasString(a, b)) return fail(STRING_ONLY_ADD);
+    if (hasBool(a, b)) return fail(BOOL_NOT_NUMBER);
+    return {};
+}
 
 /// 同类型运算的公共骨架：先提升，再按提升后的种类分派。
 /// switch 没有 default：新增 ValueKind 而忘了分支会被 -Wswitch 拦下。
-/// 调用方必须已经排除字符串（字符串不是数值塔的一部分）。
+/// 调用方必须已经用 checkArithmeticOperands 排除字符串与布尔。
 template <class IntOp, class FloatOp>
 [[nodiscard]] Result<Value> binaryOp(const Value& a, const Value& b, const ValueLimits& limits,
                                      IntOp intOp, FloatOp floatOp) {
@@ -60,9 +73,66 @@ template <class IntOp, class FloatOp>
                 floatOp(a.toFloat(limits.promotePrecision), b.toFloat(limits.promotePrecision)),
                 limits);
         case ValueKind::Str:
+        case ValueKind::Bool:
         case ValueKind::Count: break;
     }
     return fail("内部错误：未知的值种类");
+}
+
+/// 排序比较的实现：两个操作数都必须是数值（checkComparable 已保证）。
+[[nodiscard]] Result<Value> numericOrdering(const Value& a, const Value& b,
+                                            const ValueLimits& limits, int which) {
+    switch (promote(a.kind(), b.kind())) {
+        case ValueKind::Int: {
+            const mpz_class& left = a.asInt();
+            const mpz_class& right = b.asInt();
+            switch (which) {
+                case 0: return Value(left < right);
+                case 1: return Value(left <= right);
+                case 2: return Value(left > right);
+                default: return Value(left >= right);
+            }
+        }
+        case ValueKind::Float: {
+            const int order =
+                a.toFloat(limits.promotePrecision).compare(b.toFloat(limits.promotePrecision));
+            switch (which) {
+                case 0: return Value(order < 0);
+                case 1: return Value(order <= 0);
+                case 2: return Value(order > 0);
+                default: return Value(order >= 0);
+            }
+        }
+        case ValueKind::Str:
+        case ValueKind::Bool:
+        case ValueKind::Count: break;
+    }
+    return fail("内部错误：未知的值种类");
+}
+
+/// 比较的公共前置条件。
+///   ==/!=：数值塔内可混合（1 == 1.0 为真），字符串与字符串、布尔与布尔各比各的；
+///           跨种类（1 == "1"、true == 1）是类型错误。
+///   </<=/>/>=：只接受数值，混合时两边提升成小数再比（不是把小数截断成整数——
+///           那样 1 < 1.5 会变成假）。字符串与布尔没有序，显式报类型错误。
+[[nodiscard]] Status checkComparable(const Value& a, const Value& b, bool ordering) {
+    if (ordering) {
+        if (!a.isNumber() || !b.isNumber()) {
+            // 左操作数是布尔，几乎只有一个来源：`1 < 2 < 3` 这类链式写法
+            // （比较同级左结合，所以第二个 '<' 的左操作数是第一个比较的结果）。
+            // 只报"布尔值不支持排序比较"字面上没错，但完全没提示到点子上。
+            if (a.isBool())
+                return fail("类型错误：排序比较作用在布尔值上——比较是左结合的，"
+                            "`1 < 2 < 3` 会解析成 `(1 < 2) < 3`，请写成 `(1 < 2) == (2 < 3)`");
+            const Value& offender = a.isNumber() ? b : a;
+            return fail(std::format("类型错误：{}不支持排序比较（只有 '==' 与 '!='）",
+                                    kindName(offender.kind())));
+        }
+        return {};
+    }
+    if (a.isNumber() && b.isNumber()) return {};
+    if (a.kind() == b.kind()) return {};
+    return fail(std::format("类型错误：{} 与 {} 不能比较", kindName(a.kind()), kindName(b.kind())));
 }
 
 /// 供 to_literal 使用：把字符串渲染成带引号、可安全回读的形式。
@@ -102,10 +172,19 @@ template <class IntOp, class FloatOp>
 
 } // namespace
 
+Result<Value> valueFromInt(mpz_class value, const ValueLimits& limits) {
+    return checkInteger(std::move(value), limits);
+}
+
+Result<Value> valueFromFloat(Mpfr value, const ValueLimits& limits) {
+    return checkFloat(std::move(value), limits);
+}
+
 Value::Value() : data_(mpz_class(0)) {}
 Value::Value(mpz_class z) : data_(std::move(z)) {}
 Value::Value(Mpfr f) : data_(std::move(f)) {}
 Value::Value(std::string s) : data_(std::move(s)) {}
+Value::Value(bool b) : data_(b) {}
 
 ValueKind promote(ValueKind a, ValueKind b) { return a > b ? a : b; }
 
@@ -119,7 +198,7 @@ Mpfr Value::toFloat(mpfr_prec_t precision) const {
                 (void)precision; // 已有浮点值保留自己的精度
                 return payload;
             } else {
-                // 字符串不会被提升为浮点：所有数值运算入口都先做类型检查。
+                // 字符串/布尔不会被提升为浮点：所有数值运算入口都先做类型检查。
                 return Mpfr(precision);
             }
         },
@@ -140,6 +219,8 @@ std::string Value::to_string(int digits) const {
                 return payload.to_string(effective);
             } else if constexpr (std::is_same_v<T, std::string>) {
                 return payload; // 程序输出：裸文本
+            } else if constexpr (std::is_same_v<T, bool>) {
+                return payload ? "true" : "false";
             } else {
                 static_assert(detail::alwaysFalse<T>, "Value::to_string 没有处理这个 variant 备选");
                 return "<未知值>";
@@ -159,6 +240,9 @@ std::string Value::to_literal(int digits) const {
                 return payload.to_string(effective);
             } else if constexpr (std::is_same_v<T, std::string>) {
                 return quote(payload);
+            } else if constexpr (std::is_same_v<T, bool>) {
+                // 布尔字面量就是 true/false，不需要引号或转义，与源码可回读一致。
+                return payload ? "true" : "false";
             } else {
                 static_assert(detail::alwaysFalse<T>,
                               "Value::to_literal 没有处理这个 variant 备选");
@@ -179,6 +263,8 @@ std::string Value::key() const {
                 return std::string(prefix) + payload.to_key();
             } else if constexpr (std::is_same_v<T, std::string>) {
                 return std::string(prefix) + payload;
+            } else if constexpr (std::is_same_v<T, bool>) {
+                return std::string(prefix) + (payload ? "true" : "false");
             } else {
                 static_assert(detail::alwaysFalse<T>, "Value::key 没有处理这个 variant 备选");
                 return std::string(prefix) + "?";
@@ -188,7 +274,7 @@ std::string Value::key() const {
 }
 
 Result<Value> valueAdd(const Value& a, const Value& b, const ValueLimits& limits) {
-    // 字符串只支持连接；不与数值混算。
+    // 字符串只支持连接；不与数值/布尔混算。
     if (a.isStr() || b.isStr()) {
         if (!a.isStr() || !b.isStr()) return fail("类型错误：字符串只能与字符串相加");
         std::string joined = a.asStr();
@@ -197,27 +283,31 @@ Result<Value> valueAdd(const Value& a, const Value& b, const ValueLimits& limits
         joined += b.asStr();
         return checkString(std::move(joined), limits);
     }
+    if (hasBool(a, b)) return fail(BOOL_NOT_NUMBER);
     return binaryOp(
         a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x + y; },
         [](const Mpfr& x, const Mpfr& y) { return x + y; });
 }
 
 Result<Value> valueSub(const Value& a, const Value& b, const ValueLimits& limits) {
-    if (hasString(a, b)) return fail(STRING_ONLY_ADD);
+    if (auto status = checkArithmeticOperands(a, b); !status)
+        return std::unexpected(status.error());
     return binaryOp(
         a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x - y; },
         [](const Mpfr& x, const Mpfr& y) { return x - y; });
 }
 
 Result<Value> valueMul(const Value& a, const Value& b, const ValueLimits& limits) {
-    if (hasString(a, b)) return fail(STRING_ONLY_ADD);
+    if (auto status = checkArithmeticOperands(a, b); !status)
+        return std::unexpected(status.error());
     return binaryOp(
         a, b, limits, [](const mpz_class& x, const mpz_class& y) { return x * y; },
         [](const Mpfr& x, const Mpfr& y) { return x * y; });
 }
 
 Result<Value> valueDiv(const Value& a, const Value& b, const ValueLimits& limits) {
-    if (hasString(a, b)) return fail(STRING_ONLY_ADD);
+    if (auto status = checkArithmeticOperands(a, b); !status)
+        return std::unexpected(status.error());
     switch (promote(a.kind(), b.kind())) {
         case ValueKind::Int: {
             const mpz_class& divisor = b.asInt();
@@ -231,13 +321,15 @@ Result<Value> valueDiv(const Value& a, const Value& b, const ValueLimits& limits
             return checkFloat(a.toFloat(limits.promotePrecision) / divisor, limits);
         }
         case ValueKind::Str:
+        case ValueKind::Bool:
         case ValueKind::Count: break;
     }
     return fail("内部错误：未知的值种类");
 }
 
 Result<Value> valueRem(const Value& a, const Value& b, const ValueLimits& limits) {
-    if (hasString(a, b)) return fail(STRING_ONLY_ADD);
+    if (auto status = checkArithmeticOperands(a, b); !status)
+        return std::unexpected(status.error());
     switch (promote(a.kind(), b.kind())) {
         case ValueKind::Int: {
             const mpz_class& divisor = b.asInt();
@@ -251,6 +343,7 @@ Result<Value> valueRem(const Value& a, const Value& b, const ValueLimits& limits
             return checkFloat(Mpfr::fmod(a.toFloat(limits.promotePrecision), divisor), limits);
         }
         case ValueKind::Str:
+        case ValueKind::Bool:
         case ValueKind::Count: break;
     }
     return fail("内部错误：未知的值种类");
@@ -258,7 +351,8 @@ Result<Value> valueRem(const Value& a, const Value& b, const ValueLimits& limits
 
 /// 移位只接受整数：位运算对小数没有意义，显式报类型错误而不是隐式提升。
 Result<Value> valueShl(const Value& a, const Value& b, const ValueLimits& limits) {
-    if (hasString(a, b)) return fail(STRING_ONLY_ADD);
+    if (auto status = checkArithmeticOperands(a, b); !status)
+        return std::unexpected(status.error());
     if (!a.isInt() || !b.isInt()) return fail("类型错误：移位只支持整数");
 
     const mpz_class& value = a.asInt();
@@ -279,7 +373,8 @@ Result<Value> valueShl(const Value& a, const Value& b, const ValueLimits& limits
 }
 
 Result<Value> valueShr(const Value& a, const Value& b, const ValueLimits& limits) {
-    if (hasString(a, b)) return fail(STRING_ONLY_ADD);
+    if (auto status = checkArithmeticOperands(a, b); !status)
+        return std::unexpected(status.error());
     if (!a.isInt() || !b.isInt()) return fail("类型错误：移位只支持整数");
 
     const mpz_class& value = a.asInt();
@@ -296,7 +391,8 @@ Result<Value> valueShr(const Value& a, const Value& b, const ValueLimits& limits
 }
 
 Result<Value> valuePow(const Value& a, const Value& b, const ValueLimits& limits) {
-    if (hasString(a, b)) return fail(STRING_ONLY_ADD);
+    if (auto status = checkArithmeticOperands(a, b); !status)
+        return std::unexpected(status.error());
 
     if (a.isInt() && b.isInt()) {
         const mpz_class& base = a.asInt();
@@ -331,9 +427,52 @@ Result<Value> valueNeg(const Value& a, const ValueLimits& limits) {
         case ValueKind::Int: return checkInteger(-a.asInt(), limits);
         case ValueKind::Float: return checkFloat(-a.toFloat(limits.promotePrecision), limits);
         case ValueKind::Str: return fail("类型错误：字符串不支持一元负号");
+        case ValueKind::Bool: return fail("类型错误：布尔值不支持一元负号");
         case ValueKind::Count: break;
     }
     return fail("内部错误：未知的值种类");
+}
+
+// ------------------------------------------------------------------ 比较运算
+
+Result<Value> valueEq(const Value& a, const Value& b, const ValueLimits& limits) {
+    if (auto status = checkComparable(a, b, false); !status) return std::unexpected(status.error());
+    switch (promote(a.kind(), b.kind())) {
+        case ValueKind::Int: return Value(a.asInt() == b.asInt());
+        case ValueKind::Float:
+            return Value(
+                a.toFloat(limits.promotePrecision).equals(b.toFloat(limits.promotePrecision)));
+        case ValueKind::Str: return Value(a.asStr() == b.asStr());
+        case ValueKind::Bool: return Value(a.asBool() == b.asBool());
+        case ValueKind::Count: break;
+    }
+    return fail("内部错误：未知的值种类");
+}
+
+Result<Value> valueNe(const Value& a, const Value& b, const ValueLimits& limits) {
+    auto equal = valueEq(a, b, limits);
+    if (!equal) return std::unexpected(equal.error());
+    return Value(!equal->asBool());
+}
+
+Result<Value> valueLt(const Value& a, const Value& b, const ValueLimits& limits) {
+    if (auto status = checkComparable(a, b, true); !status) return std::unexpected(status.error());
+    return numericOrdering(a, b, limits, 0);
+}
+
+Result<Value> valueLe(const Value& a, const Value& b, const ValueLimits& limits) {
+    if (auto status = checkComparable(a, b, true); !status) return std::unexpected(status.error());
+    return numericOrdering(a, b, limits, 1);
+}
+
+Result<Value> valueGt(const Value& a, const Value& b, const ValueLimits& limits) {
+    if (auto status = checkComparable(a, b, true); !status) return std::unexpected(status.error());
+    return numericOrdering(a, b, limits, 2);
+}
+
+Result<Value> valueGe(const Value& a, const Value& b, const ValueLimits& limits) {
+    if (auto status = checkComparable(a, b, true); !status) return std::unexpected(status.error());
+    return numericOrdering(a, b, limits, 3);
 }
 
 } // namespace sc

@@ -16,15 +16,27 @@
 #include <string_view>
 #include <type_traits>
 #include <variant>
-
 namespace sc {
 
-/// 值的种类。Int/Float 是数值塔（可互相提升），Str 不在塔里：
-/// 字符串只支持 '+' 连接，其他运算一律类型错误。
-enum class ValueKind { Int = 0, Float = 1, Str = 2, Count };
+/// 值的种类。Int/Float 是数值塔（可互相提升）；Str 与 Bool 不在塔里：
+/// 字符串只支持 '+' 连接、与数值只支持 ==/!=，布尔只支持 ==/!=，
+/// 其余运算一律类型错误。
+enum class ValueKind { Int = 0, Float = 1, Str = 2, Bool = 3, Count };
 
 /// 真实种类数（不含 Count）。
 inline constexpr int VALUE_KIND_COUNT = static_cast<int>(ValueKind::Count);
+
+/// 种类名（诊断消息用）。用于"条件必须是布尔"这类需要报出实际类型的错误。
+[[nodiscard]] constexpr std::string_view kindName(ValueKind kind) {
+    switch (kind) {
+        case ValueKind::Int: return "整数";
+        case ValueKind::Float: return "小数";
+        case ValueKind::Str: return "字符串";
+        case ValueKind::Bool: return "布尔值";
+        case ValueKind::Count: break;
+    }
+    return "未知类型";
+}
 
 /// 值层策略：整数位宽预算、整数幂指数上限、是否接受 inf/nan、
 /// 整数提升为浮点时的精度、单个字符串的字节预算。
@@ -43,17 +55,25 @@ public:
     Value(mpz_class z);
     Value(Mpfr f);
     Value(std::string s);
+    Value(bool b);
 
     [[nodiscard]] ValueKind kind() const { return static_cast<ValueKind>(data_.index()); }
     [[nodiscard]] int rank() const { return static_cast<int>(kind()); }
     [[nodiscard]] bool isInt() const { return kind() == ValueKind::Int; }
     [[nodiscard]] bool isFloat() const { return kind() == ValueKind::Float; }
     [[nodiscard]] bool isStr() const { return kind() == ValueKind::Str; }
+    [[nodiscard]] bool isBool() const { return kind() == ValueKind::Bool; }
+    /// 是不是数值塔里的种类（Int/Float）。算术运算只接受数值。
+    [[nodiscard]] bool isNumber() const { return isInt() || isFloat(); }
+    /// 种类名（诊断消息用）。
+    [[nodiscard]] std::string_view typeName() const { return kindName(kind()); }
 
     /// 整数载荷（仅在 isInt() 时有效）。
     [[nodiscard]] const mpz_class& asInt() const { return std::get<mpz_class>(data_); }
     /// 字符串载荷（仅在 isStr() 时有效）。
     [[nodiscard]] const std::string& asStr() const { return std::get<std::string>(data_); }
+    /// 布尔载荷（仅在 isBool() 时有效）。
+    [[nodiscard]] bool asBool() const { return std::get<bool>(data_); }
 
     /// 提升为浮点；整数按 precision 构造，浮点值原样返回。
     /// 前置条件：调用方已排除字符串（数值运算会先做类型检查）。
@@ -72,10 +92,12 @@ public:
     [[nodiscard]] std::string key() const;
 
     /// 原始载荷的访问器，供热衷于自己 visit 的扩展使用。
-    [[nodiscard]] const std::variant<mpz_class, Mpfr, std::string>& raw() const { return data_; }
+    [[nodiscard]] const std::variant<mpz_class, Mpfr, std::string, bool>& raw() const {
+        return data_;
+    }
 
 private:
-    std::variant<mpz_class, Mpfr, std::string> data_;
+    std::variant<mpz_class, Mpfr, std::string, bool> data_;
 
     static_assert(std::variant_size_v<decltype(data_)> ==
                       static_cast<std::size_t>(VALUE_KIND_COUNT),
@@ -83,8 +105,14 @@ private:
 };
 
 /// 数值提升：取等级更高的种类。
-/// 前置条件：两个参数都必须是数值种类（调用方已排除字符串）。
+/// 前置条件：两个参数都必须是数值种类 Int/Float。
+/// Bool 与 Str 都被所有算术入口提前拒绝，所以这里 V != Bool 也成立。
 [[nodiscard]] ValueKind promote(ValueKind a, ValueKind b);
+
+/// 造一个受策略约束的数值结果：整数走位宽预算，小数走 inf/nan 策略。
+/// 算术运算与内建函数（builtins.cpp）共用这一处收口，保证数值策略只有一份实现。
+[[nodiscard]] Result<Value> valueFromInt(mpz_class value, const ValueLimits& limits);
+[[nodiscard]] Result<Value> valueFromFloat(Mpfr value, const ValueLimits& limits);
 
 // 运算。实现放在 value.cpp，由 operators.hpp 的表引用；
 // 想加新运算就在这里加一个自由函数 + 在表里加一行。
@@ -97,5 +125,17 @@ private:
 [[nodiscard]] Result<Value> valueShr(const Value& a, const Value& b, const ValueLimits& limits);
 [[nodiscard]] Result<Value> valuePow(const Value& a, const Value& b, const ValueLimits& limits);
 [[nodiscard]] Result<Value> valueNeg(const Value& a, const ValueLimits& limits);
+
+// 比较。六个运算符都返回 Bool；limits 目前用不上，签名保持一致以便将来加
+// 「字符串按码点比较」这类策略参数。
+//   ==/!=：任意两个同种类值（含字符串、布尔）；种类不同是类型错误。
+//   </<=/>/>=：只接受数值；字符串与布尔报类型错误（布尔没有大小之分）。
+/// 相等/不等（negate=true 时求反）。
+[[nodiscard]] Result<Value> valueEq(const Value& a, const Value& b, const ValueLimits& limits);
+[[nodiscard]] Result<Value> valueNe(const Value& a, const Value& b, const ValueLimits& limits);
+[[nodiscard]] Result<Value> valueLt(const Value& a, const Value& b, const ValueLimits& limits);
+[[nodiscard]] Result<Value> valueLe(const Value& a, const Value& b, const ValueLimits& limits);
+[[nodiscard]] Result<Value> valueGt(const Value& a, const Value& b, const ValueLimits& limits);
+[[nodiscard]] Result<Value> valueGe(const Value& a, const Value& b, const ValueLimits& limits);
 
 } // namespace sc

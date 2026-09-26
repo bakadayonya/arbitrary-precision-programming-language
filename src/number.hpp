@@ -43,6 +43,21 @@ public:
     [[nodiscard]] mpfr_prec_t precision() const { return mpfr_get_prec(v_); }
     [[nodiscard]] bool isZero() const { return mpfr_zero_p(v_) != 0; }
     [[nodiscard]] bool isFinite() const { return mpfr_number_p(v_) != 0; }
+    [[nodiscard]] bool isNaN() const { return mpfr_nan_p(v_) != 0; }
+    [[nodiscard]] bool isInf() const { return mpfr_inf_p(v_) != 0; }
+    [[nodiscard]] int sign() const { return mpfr_sgn(v_); }
+
+    /// 底层 mpfr_t 句柄。这是刻意的逃生口，给需要直接调用 MPFR 的扩展用
+    /// （见 builtins.cpp 的内建数学函数）；日常运算请用上面的成员函数。
+    /// 注意：句柄的精度就是本值的精度，用 mpfr_set 写回时不改变精度。
+    [[nodiscard]] mpfr_ptr get() noexcept { return v_; }
+    [[nodiscard]] mpfr_srcptr get() const noexcept { return v_; }
+
+    /// 三路比较（mpfr_cmp）：< 0、0、> 0；任一操作数为 nan 时返回 0
+    /// （与 C 的「nan 参与的比较全是假」配合使用，见 equals）。
+    [[nodiscard]] int compare(const Mpfr& other) const;
+    /// 相等（mpfr_equal_p）：nan 与任何值（包括 nan）都不相等。
+    [[nodiscard]] bool equals(const Mpfr& other) const;
 
     /// 面向用户的十进制文本，最多 digits 位有效数字（%g 会去掉多余的 0）。
     [[nodiscard]] std::string to_string(int digits) const;

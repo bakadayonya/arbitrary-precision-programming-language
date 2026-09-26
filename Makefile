@@ -3,6 +3,14 @@ CXX      ?= g++
 CXXFLAGS ?= -std=c++23 -O2 -Wall -Wextra -Wpedantic
 LDLIBS   ?= -lgmpxx -lgmp -lmpfr -lutf8proc
 
+# 第三方头目录（目前是 vendor/neo-math.h，GMP + MPFR 的高精度数学库封装）。
+# 用 -isystem 而不是 -I，有两个理由：
+#   * 它的代码不参与本项目的警告集（-Wuseless-cast 下会报几条），make strict 才能保持零警告；
+#   * 它的路径不在 src/ 下，因此 clang-tidy 的 HeaderFilterRegex 与 clang-format 的 SOURCES
+#     都不会把它当成本项目代码。
+# 单独一个变量，是为了 strict/ubsan/clang 这些覆盖 CXXFLAGS 的目标也能继承它。
+VENDOR   ?= -isystem vendor
+
 BIN      := sc
 SRCDIR   := src
 # 编译选项不同就用不同的对象目录，避免在 release/strict/ubsan 之间切换时
@@ -21,7 +29,7 @@ $(BIN): $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ $(LDLIBS) -o $@
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(VENDOR) -MMD -MP -c $< -o $@
 
 $(BUILDDIR):
 	mkdir -p $@
@@ -57,7 +65,7 @@ SOURCES      := $(SRCS) $(wildcard $(SRCDIR)/*.hpp)
 # 只喂 .cpp：头文件会经由包含它的 TU 被分析，单独当 TU 跑只会白白翻倍耗时。
 # 带 clang-analyzer 全量跑一轮大约要几分钟。
 tidy:
-	$(CLANG_TIDY) -quiet $(SRCS) -- -std=c++23 -Isrc
+	$(CLANG_TIDY) -quiet $(SRCS) -- -std=c++23 -Isrc $(VENDOR)
 
 # 应用项目风格
 format:

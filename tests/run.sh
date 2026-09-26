@@ -108,6 +108,14 @@ gen_unary() {
     local n=$1
     { printf 'print '; printf -- '-%.0s' $(seq 1 "$n"); printf '1'; } >"$TMP/unary.sc"
 }
+gen_blocks() {
+    local n=$1
+    { printf '{%.0s' $(seq 1 "$n"); printf 'print 1'; printf '}%.0s' $(seq 1 "$n"); } >"$TMP/blocks.sc"
+}
+gen_ifs() {
+    local n=$1
+    { printf 'if (true) {%.0s' $(seq 1 "$n"); printf 'print 1'; printf '}%.0s' $(seq 1 "$n"); } >"$TMP/ifs.sc"
+}
 
 echo "== 基本求值与词法 =="
 check_out "不写分号的 print"            0 "0.$(printf '6%.0s' $(seq 1 76))7" -e 'print 2.0 / 3'
@@ -191,6 +199,13 @@ gen_chain 2047
 check_file_out "逼近节点预算的表达式仍可求值" 0 "2048" "$TMP/chain.sc"
 gen_parens 200
 check_file_out "200 层括号仍可正常求值" 0 "1" "$TMP/parens.sc"
+# 语句嵌套也必须被拦住：加语句深度防护之前这两条会在解析期打穿调用栈（段错误 139）。
+gen_blocks 50000
+check_file_err "5 万层嵌套块：报错而非段错误" 1 "语句嵌套过深" "$TMP/blocks.sc"
+gen_ifs 50000
+check_file_err "5 万层嵌套 if：报错而非段错误" 1 "语句嵌套过深" "$TMP/ifs.sc"
+gen_blocks 200
+check_file_out "200 层嵌套块仍可正常求值" 0 "1" "$TMP/blocks.sc"
 
 echo "== 可调参数：--set / --list-config / --help =="
 check_out "precision=128 输出 38 位有效数字" 0 "0.$(printf '3%.0s' $(seq 1 38))" \
@@ -273,8 +288,152 @@ check_err "移位只支持整数（左操作数）"  1 "移位只支持整数" -
 check_err "移位只支持整数（右操作数）"  1 "移位只支持整数" -e 'print 1 << 2.0'
 check_err "左移位宽预算（与幂共用）"    1 "左移结果超出位宽上限" -e 'print 1 << 1073741825'
 check_err "位宽预算可调"                1 "上限 100 位" --set max-integer-bits=100 -e 'print 1 << 200'
-check_err "单字符 < 给出提示"           1 "移位要写成" -e 'print 3 < 4'
-check_err "单字符 > 给出提示"           1 '移位要写成' -e 'print 3 > 4'
+check_err "单字符 ! 给出提示"            1 "不等号要写成" -e 'print 1 ! 2'
+
+echo "== 布尔类型与比较运算符 =="
+check_out "true 字面量"                  0 "true" -e 'print true'
+check_out "false 字面量"                 0 "false" -e 'print false'
+check_out "布尔字面量可以放进变量"       0 "true" -e 'x = true; print x'
+check_out "布尔字面量做表达式语句"       0 "false" -e 'false'
+check_err "true 是关键字，不能被赋值"     1 "期望 ';'" -e 'true = 1'
+check_out "整数相等"                     0 "true" -e 'print 1 == 1'
+check_out "整数不等"                     0 "false" -e 'print 1 == 2'
+check_out "!= 取反"                      0 "true" -e 'print 1 != 2'
+check_out "小于 / 大于"                  0 $'true\nfalse' -e 'print 1 < 2; print 1 > 2'
+check_out "<= 与 >= 的边界"              0 $'true\ntrue' -e 'print 2 <= 2; print 2 >= 2'
+check_out "负数比较"                     0 "true" -e 'print -3 < -1'
+check_out "大整数比较（GMP）"            0 $'true\nfalse' -e 'print 2**100 > 2**99; print 2**100 < 2**99'
+check_out "整数与小数比较（提升为小数）" 0 "true" -e 'print 1 < 1.5'
+check_out "1 == 1.0（跨数值塔相等）"      0 "true" -e 'print 1 == 1.0'
+# 0.1 与 0.2 在二进制里是无限循环小数，256 位精度下舍入方向一致，所以和恰好等于 0.3。
+# 换成 1.0/3 这类就未必了；== 是精确比较，不做任何容差。
+check_out "小数相等（无容差）"            0 "true" -e 'print 0.1 + 0.2 == 0.3'
+check_out "小数比较"                     0 "false" -e 'print 1.5 > 2'
+check_out "字符串相等"                   0 "true" -e 'print "ab" == "ab"'
+check_out "字符串不等（按内容）"         0 "true" -e 'print "ab" != "ba"'
+check_out "中文字符串相等"               0 "true" -e 'print "中文" == "中文"'
+check_out "布尔相等 / 不等"              0 $'true\ntrue' -e 'print true == true; print true != false'
+check_out "布尔相等可以和比较结果互比"   0 "true" -e 'print (1 < 2) == true'
+check_err "布尔不参与算术（+）"          1 "布尔值不参与算术运算" -e 'print true + 1'
+check_err "布尔不参与算术（-）"          1 "布尔值不参与算术运算" -e 'print 1 - true'
+check_err "布尔不参与乘法"               1 "布尔值不参与算术运算" -e 'print true * 2'
+check_err "布尔不参与取余"               1 "布尔值不参与算术运算" -e 'print true % 2'
+check_err "布尔不参与移位"               1 "布尔值不参与算术运算" -e 'print true << 1'
+check_err "布尔不参与幂"                 1 "布尔值不参与算术运算" -e 'print true ** 2'
+check_err "布尔不支持一元负号"           1 "布尔值不支持一元负号" -e 'print -true'
+check_err "布尔没有大小之分"             1 "不支持排序比较" -e 'print 1 < true'
+check_err "字符串没有大小之分"           1 "字符串不支持排序比较" -e 'print "a" < "b"'
+check_err "字符串 <= 也报类型错误"       1 "字符串不支持排序比较" -e 'print "a" <= "a"'
+check_err "布尔与整数不能比较"           1 "不能比较" -e 'print true == 1'
+check_err "整数与字符串不能比较"         1 "不能比较" -e 'print 1 == "1"'
+check_err "字符串与布尔不能比较"         1 "不能比较" -e 'print "a" == true'
+check_err "链式排序比较报错并给出改写提示" 1 "解析成 \`(1 < 2) < 3\`" -e 'print 1 < 2 < 3'
+check_out "链式相等可以解析（(1==2)==false）" 0 "true" -e 'print 1 == 2 == false'
+check_err "跨种类比较仍是类型错误"       1 "不能比较" -e 'print 1 == "1" == "x"'
+check_out "比较比移位松"                 0 "true" -e 'print 1 << 2 < 5'
+check_out "比较比移位松（右侧）"         0 "true" -e 'print 5 > 1 << 2'
+check_out "比较比加减松"                 0 "true" -e 'print 1 + 1 == 2'
+check_out "比较比乘除松"                 0 "false" -e 'print 2 * 3 < 6'
+check_out "比较比幂松"                   0 "true" -e 'print 2 ** 3 >= 8'
+check_out "比较比一元负号松"             0 "true" -e 'print -2 < -1'
+check_out "== 与 < 同优先级（都低于移位）" 0 "true" -e 'print 1 < 2 == true'
+check_out "括号里的比较可以嵌套"         0 "true" -e 'print (1 < 2) == (2 < 3)'
+check_out "比较结果当条件表达式用"       0 "false" -e 'print (1 < 2) == (3 < 2)'
+
+cmp_stdout=$("$BIN" -d -e 'print 1 < 2' 2>"$TMP/cmp"); cmp_rc=$?
+if [[ $cmp_rc -eq 0 && "$(strip_trailing_newlines "$cmp_stdout")" == "true" \
+      && "$(grep -cE '^ *[0-9]+: LT$' "$TMP/cmp")" -eq 1 \
+      && "$(grep -c 'PUSH' "$TMP/cmp")" -eq 2 \
+      && "$(grep -c '^  \[[0-9]*\]' "$TMP/cmp")" -eq 2 ]]; then
+    ok "比较生成一条 LT 指令，不额外压常量（常量池只有两个操作数）"
+else
+    bad "比较生成一条 LT 指令，不额外压常量（常量池只有两个操作数）" \
+        "exit=$cmp_rc stdout=[$cmp_stdout] dump=[$(cat "$TMP/cmp")]"
+fi
+
+bool_pool=$("$BIN" -d -e 'print true; print true; print 1 < 2' 2>"$TMP/bool"); bool_rc=$?
+if [[ $bool_rc -eq 0 && "$(grep -c 'PUSH  \[0\] true' "$TMP/bool")" -eq 2 \
+      && "$(grep -c '^  \[[0-9]*\] true$' "$TMP/bool")" -eq 1 \
+      && "$(grep -c '^  \[[0-9]*\]' "$TMP/bool")" -eq 3 ]]; then
+    ok "布尔字面量进常量池且按内容去重（两次 true 只占一个常量）"
+else
+    bad "布尔字面量进常量池且按内容去重（两次 true 只占一个常量）" \
+        "exit=$bool_rc dump=[$(cat "$TMP/bool")]"
+fi
+
+check_stdin ":vars 里的布尔显示为 true"    0 $'x = 2 > 1\n:vars\n:quit\n' "x -> slot 0 = true" "-"
+check_stdin ":consts 里的布尔不带引号"     0 $'x = true; print x\n:consts\n:quit\n' "[0] true" "-"
+check_stdin "REPL：多行 if 块自动续行"      0 $'if (true) {\nprint 424242\n}\n:quit\n' "424242" "-"
+check_stdin "REPL：多行 for 自动续行"       0 $'for (i = 0;\ni < 2;\ni = i + 1) {\nprint 424242\n}\n:quit\n' "424242" "-"
+check_stdin "REPL：块未闭合提示续行"        0 $'if (true) {\nprint 1\n' ">>>" "丢弃未完成的输入"
+check_stdin "REPL：循环里 break 可用"       0 $'i = 0\nwhile (true) {\ni = i + 1\nif (i > 1) { break }\n}\nprint i\n:quit\n' "2" "-"
+
+echo "== if / else =="
+check_out "if 真分支"                    0 "yes" -e 'if (1 < 2) { print "yes" } else { print "no" }'
+check_out "if 假分支走 else"             0 "no"  -e 'if (1 > 2) { print "yes" } else { print "no" }'
+check_out "没有 else 且条件为假"         0 ""    -e 'if (false) { print 1 }'
+check_out "else if 链"                   0 "b"   -e 'if (1 > 2) print "a"; else if (2 > 1) print "b"; else print "c"'
+check_out "单语句分支（无花括号）"       0 "1"   -e 'if (true) print 1'
+check_out "then/else 各是一条语句"       0 "2"   -e 'if (false) print 1; else print 2'
+check_out "空块合法"                     0 ""    -e 'if (true) { }'
+check_out "if 可以嵌套"                  0 "42"  -e 'if (true) { if (true) { print 42 } }'
+check_out "if 不成立时 else if 继续判断"  0 "2"  -e 'x = 2; if (x == 1) { print 1 } else if (x == 2) { print 2 }'
+check_err "条件必须是布尔（整数）"       1 "条件必须是布尔值（这里是整数）" -e 'if (1) { print 1 }'
+check_err "条件必须是布尔（字符串）"     1 "条件必须是布尔值（这里是字符串）" -e 'if ("a") { print 1 }'
+check_err "缺条件括号"                   1 "期望" -e 'if true { print 1 }'
+check_err "缺右花括号"                   1 "输入未结束" -e 'if (true) { print 1'
+
+echo "== while =="
+check_out "while 计数"                   0 $'0\n1\n2' -e 'i = 0; while (i < 3) { print i; i = i + 1 }'
+check_out "while 条件一开始就为假"       0 ""    -e 'while (false) { print 1 }'
+check_out "while + break"                0 "3"   -e 'i = 0; while (true) { i = i + 1; if (i > 2) break }; print i'
+check_out "while + continue"             0 $'1\n3' -e 'i = 0; while (i < 3) { i = i + 1; if (i == 2) continue; print i }'
+check_err "while 条件必须是布尔"         1 "条件必须是布尔值" -e 'while (1) { print 1 }'
+check_err "while 里缺分号"               1 "期望 ';'" -e 'i = 0; while (i < 1) { i = i + 1 print 1 }'
+
+echo "== for（C 风格）=="
+check_out "for 计数"                     0 $'0\n1\n2' -e 'for (i = 0; i < 3; i = i + 1) { print i }'
+check_out "for 单语句体"                 0 $'0\n1' -e 'for (i = 0; i < 2; i = i + 1) print i'
+check_out "for 初始化可省略"             0 $'0\n1' -e 'i = 0; for (; i < 2; i = i + 1) { print i }'
+check_out "for 后置可省略"               0 $'0\n1' -e 'for (i = 0; i < 2;) { print i; i = i + 1 }'
+check_out "for 条件省略即死循环"         0 "4"   -e 'n = 0; for (;;) { n = n + 1; if (n > 3) break }; print n'
+check_out "for + continue 仍走后置"      0 $'0\n2' -e 'for (i = 0; i < 3; i = i + 1) { if (i == 1) continue; print i }'
+check_out "for + break"                  0 $'0\n1' -e 'for (i = 0; i < 10; i = i + 1) { if (i == 2) break; print i }'
+check_out "for 初始化里定义变量"         0 "3"   -e 'for (n = 0; n < 3; n = n + 1) { }; print n'
+check_err "for 缺右括号"                 1 "期望" -e 'for (i = 0; i < 2; i = i + 1 { print i }'
+check_err "for 条件必须是布尔"           1 "条件必须是布尔值" -e 'for (i = 0; i; i = i + 1) { print 1 }'
+
+echo "== break / continue 的位置校验 =="
+check_err "break 必须在循环里"           1 "break 只能用在循环里" -e 'break'
+check_err "continue 必须在循环里"        1 "continue 只能用在循环里" -e 'continue'
+check_err "break 在 if 里也不行（不在循环）" 1 "break 只能用在循环里" -e 'if (true) { break }'
+check_out "break 在块里（在循环内）"     0 ""    -e 'for (i = 0; i < 5; i = i + 1) { { break }; print i }'
+check_out "continue 在块里（在循环内）"  0 $'0\n2' -e 'for (i = 0; i < 3; i = i + 1) { { if (i == 1) continue }; print i }'
+
+echo "== 循环嵌套 =="
+check_out "双层 for"                     0 $'0\n1\n10\n11' \
+    -e 'for (i = 0; i < 2; i = i + 1) { for (j = 0; j < 2; j = j + 1) { print i * 10 + j } }'
+check_out "break 只跳出内层"             0 $'0\n10' \
+    -e 'for (i = 0; i < 2; i = i + 1) { for (j = 0; j < 5; j = j + 1) { if (j == 1) break; print i * 10 + j } }'
+check_out "continue 只作用于内层"        0 $'0\n10' \
+    -e 'for (i = 0; i < 2; i = i + 1) { for (j = 0; j < 5; j = j + 1) { if (j == 1) continue; if (j > 1) break; print i * 10 + j } }'
+check_out "while 套 for"                 0 $'0\n1\n0\n1' \
+    -e 'k = 0; while (k < 2) { for (j = 0; j < 2; j = j + 1) { print j }; k = k + 1 }'
+check_out "循环里用比较结果当条件"       0 "3" -e 'i = 0; while (i < 3) { i = i + 1 }; print i'
+
+echo "== 语句块与分号规则 =="
+check_out "块作为语句"                   0 "1" -e '{ print 1 }'
+check_out "块后写分号可接更多语句"       0 $'1\n2' -e '{ print 1 }; print 2'
+check_out "块内最后一条可省分号"         0 $'1\n2' -e '{ print 1; print 2 }'
+check_out "块内多余分号合法"             0 "1" -e '{ print 1;; }'
+check_out "空块"                         0 "" -e '{ }'
+check_err "块后漏分号"                   1 "期望 ';'" -e '{ print 1 } print 2'
+check_err "块内漏分号"                   1 "期望 ';'" -e '{ print 1 print 2 }'
+check_err "顶层漏分号"                   1 "期望 ';'" -e 'print 1 print 2'
+check_err "循环体后漏分号"               1 "期望 ';'" -e 'for (i = 0; i < 1; i = i + 1) { print i } print 2'
+check_out "循环体后写分号"               0 $'0\n2' -e 'for (i = 0; i < 1; i = i + 1) { print i }; print 2'
+check_err "循环体后漏分号"               1 "期望 ';'" -e 'for (i = 0; i < 1; i = i + 1) { print i } break'
+check_err "块语句后接赋值也要分号"       1 "期望 ';'" -e 'i = 0; { print i } i = i + 1'
 
 echo "== Pratt 绑定力（左右结合 / 前缀与幂的相互作用）=="
 check_out "混合链：+ - * / %"           0 "5" -e 'print 1 + 2 * 3 - 4 / 2 % 3'
@@ -328,6 +487,56 @@ else
     bad "宽字符诊断：码点列 + 显示宽度插入符" \
         "stderr=[$(printf '%s' "$wide_err" | tr '\n' '~')] 插入符缩进=${#wide_pad}(期望 28)"
 fi
+
+echo "== 内建数学函数（vendor/neo-math.h）=="
+# 小数函数：整数实参按 precision 提升，结果位数由值自身精度决定（256 位 → 77 位有效数字）。
+check_out "sqrt(2)"                     0 "1.4142135623730950488016887242096980785696718753769480731766797379907324784621" -e 'print sqrt(2)'
+check_out "整数实参提升为小数"          0 "2" -e 'print sqrt(4)'
+check_out "pi() 常量"                   0 "3.1415926535897932384626433832795028841971693993751058209749445923078164062862" -e 'print pi()'
+check_out "ln(e()) 与常量往返"          0 "1" -e 'print ln(e())'
+check_out "log(x, base) 换底"           0 "3" -e 'print log(1000, 10)'
+check_out "log10 / ln 分工"             0 "2" -e 'print log10(100)'
+check_out "hypot"                       0 "5" -e 'print hypot(3, 4)'
+check_out "sin(pi()/2)"                 0 "1" -e 'print sin(pi()/2)'
+check_out "cos(pi())"                   0 "-1" -e 'print cos(pi())'
+# 值种类保持：整数不该为了取整/取绝对值而变成小数（那会白白丢精度）。
+check_out "floor(2.7)"                  0 "2" -e 'print floor(2.7)'
+check_out "floor 对整数是恒等"          0 "1267650600228229401496703205376" -e 'print floor(2**100)'
+check_out "abs 保持整数精确"            0 "1267650600228229401496703205376" -e 'print abs(-2**100)'
+check_out "min 保持整数精确"            0 "1267650600228229401496703205376" -e 'print min(2**100, 2**101)'
+# 整数函数（GMP）
+check_out "gcd"                         0 "6" -e 'print gcd(12, 18)'
+check_out "lcm"                         0 "36" -e 'print lcm(12, 18)'
+check_out "factorial(20)"               0 "2432902008176640000" -e 'print factorial(20)'
+check_out "binomial(20, 5)"             0 "15504" -e 'print binomial(20, 5)'
+check_out "fibonacci(100)"              0 "354224848179261915075" -e 'print fibonacci(100)'
+check_out "is_prime"                    0 "true" -e 'print is_prime(2**61 - 1)'
+check_out "next_prime"                  0 "101" -e 'print next_prime(100)'
+check_out "isqrt 是精确整数平方根"      0 "1125899906842624" -e 'print isqrt(2**100)'
+check_out "powm 模幂"                   0 "24" -e 'print powm(2, 10, 1000)'
+# 语法与绑定力：调用是最紧的后缀形式
+check_out "sqrt(2)**2"                  0 "2" -e 'print sqrt(2)**2'
+check_out "调用比一元负号紧"            0 "-1.4142135623730950488016887242096980785696718753769480731766797379907324784621" -e 'print -sqrt(2)'
+check_out "逗号分隔的实参各算各的"      0 "3" -e 'print max(1 + 1, 2 + 1)'
+check_out "实参里可以再调用"            0 "2" -e 'print sqrt(sqrt(16))'
+# 常量按 Config::precision 求值，不是写死的 256
+check_out "pi() 跟随 precision" 0 "3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117067982148086513282306647093844609550582231725359408128481" --set precision=512 -e 'print pi()'
+# 编译期就能拦下的错误
+check_err "未知内建函数"                1 "未知的内建函数：nope" -e 'print nope(1)'
+check_err "实参个数过多"                1 "需要 1 个参数，但给了 2 个" -e 'print sqrt(1, 2)'
+check_err "实参个数过少"                1 "内建函数 log 需要 2 个参数，但给了 1 个" -e 'print log(1)'
+check_err "实参类型不符"                1 "需要数值参数（这里是字符串）" -e 'print sqrt("a")'
+check_err "整数函数拒绝小数"            1 "需要整数参数（这里是小数）" -e 'print gcd(2.5, 1)'
+check_err "未闭合的调用是 incomplete"   1 "输入未结束：缺少 ')'" -e 'print sqrt(2'
+# 运行期数值策略
+check_err "定义域错误 sqrt(-1)"         1 "sqrt: 数学函数定义域错误" -e 'print sqrt(-1)'
+check_err "溢出错误 exp(1e9)"           1 "exp: 数学函数结果溢出" -e 'print exp(1e9)'
+check_err "阶乘规模受 CPU 预算约束"     1 "factorial: 参数超过 CPU 预算" -e 'print factorial(1000000000)'
+check_err "整数结果受位宽预算约束"      1 "factorial: 结果预计约" --set max-integer-bits=64 -e 'print factorial(30)'
+check_err "powm 拒绝非正模"             1 "模必须为正整数" -e 'print powm(2, 3, 0)'
+check_out "allow-non-finite 时 ln(0) 得 -inf" 0 "-inf" --set allow-non-finite=true -e 'print ln(0)'
+# 反汇编把表项下标显示成名字
+check_err "-d 显示内建函数名"           0 "CALL  sqrt" -d -e 'print sqrt(2)'
 
 echo "== REPL =="
 check_stdin "续行：不完整表达式自动等下一行" 0 $'print 1 +\n424241\n:quit\n' "424242" "-"

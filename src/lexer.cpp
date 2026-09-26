@@ -105,21 +105,51 @@ Result<std::vector<Token>> Lexer::tokenize() {
                     pos_ += 2;
                     break;
                 }
-                return fail(std::format("非法字符 {}：移位要写成 '<<'",
-                                        unicode::describe(static_cast<char32_t>('<'))),
-                            start);
+                if (pos_ + 1 < src_.size() && src_[pos_ + 1] == '=') {
+                    tokens.push_back({TokenType::LessEqual, "<=", start});
+                    pos_ += 2;
+                    break;
+                }
+                tokens.push_back({TokenType::Less, "<", start});
+                ++pos_;
+                break;
             case '>':
                 if (pos_ + 1 < src_.size() && src_[pos_ + 1] == '>') {
                     tokens.push_back({TokenType::ShiftRight, ">>", start});
                     pos_ += 2;
                     break;
                 }
-                return fail(std::format("非法字符 {}：移位要写成 '>>'",
-                                        unicode::describe(static_cast<char32_t>('>'))),
+                if (pos_ + 1 < src_.size() && src_[pos_ + 1] == '=') {
+                    tokens.push_back({TokenType::GreaterEqual, ">=", start});
+                    pos_ += 2;
+                    break;
+                }
+                tokens.push_back({TokenType::Greater, ">", start});
+                ++pos_;
+                break;
+            case '!':
+                if (pos_ + 1 < src_.size() && src_[pos_ + 1] == '=') {
+                    tokens.push_back({TokenType::NotEqual, "!=", start});
+                    pos_ += 2;
+                    break;
+                }
+                return fail(std::format("非法字符 {}：不等号要写成 '!='",
+                                        unicode::describe(static_cast<char32_t>('!'))),
                             start);
             case '(': tokens.push_back({TokenType::LParen, "(", start}); ++pos_; break;
             case ')': tokens.push_back({TokenType::RParen, ")", start}); ++pos_; break;
-            case '=': tokens.push_back({TokenType::Assign, "=", start}); ++pos_; break;
+            case ',': tokens.push_back({TokenType::Comma, ",", start}); ++pos_; break;
+            case '{': tokens.push_back({TokenType::LBrace, "{", start}); ++pos_; break;
+            case '}': tokens.push_back({TokenType::RBrace, "}", start}); ++pos_; break;
+            case '=':
+                if (pos_ + 1 < src_.size() && src_[pos_ + 1] == '=') {
+                    tokens.push_back({TokenType::Equal, "==", start});
+                    pos_ += 2;
+                    break;
+                }
+                tokens.push_back({TokenType::Assign, "=", start});
+                ++pos_;
+                break;
             case ';': tokens.push_back({TokenType::Semicolon, ";", start}); ++pos_; break;
             case '*':
                 if (pos_ + 1 < src_.size() && src_[pos_ + 1] == '*') {
@@ -205,8 +235,18 @@ Token Lexer::readIdentifier() {
         if (auto normalized = unicode::normalizeNfc(name)) name = std::move(*normalized);
     }
 
-    const TokenType type = (name == "print") ? TokenType::Print : TokenType::Ident;
-    return {type, std::move(name), static_cast<int>(start)};
+    // 关键字表。标识符在这里退化成关键字 token，所以加关键字只需要加一行。
+    // 关键字都是 ASCII；标识符在非 ASCII 时已做过 NFC，不会与这些名字混淆。
+    if (name == "print") return {TokenType::Print, std::move(name), static_cast<int>(start)};
+    if (name == "true") return {TokenType::True, std::move(name), static_cast<int>(start)};
+    if (name == "false") return {TokenType::False, std::move(name), static_cast<int>(start)};
+    if (name == "if") return {TokenType::If, std::move(name), static_cast<int>(start)};
+    if (name == "else") return {TokenType::Else, std::move(name), static_cast<int>(start)};
+    if (name == "while") return {TokenType::While, std::move(name), static_cast<int>(start)};
+    if (name == "for") return {TokenType::For, std::move(name), static_cast<int>(start)};
+    if (name == "break") return {TokenType::Break, std::move(name), static_cast<int>(start)};
+    if (name == "continue") return {TokenType::Continue, std::move(name), static_cast<int>(start)};
+    return {TokenType::Ident, std::move(name), static_cast<int>(start)};
 }
 
 Result<Token> Lexer::readString(int start) {
